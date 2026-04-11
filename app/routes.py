@@ -1,7 +1,7 @@
 """Route handlers for Kitchen Companion application."""
 from flask import Blueprint, request, jsonify, render_template, url_for
 from app import db
-from app.models import Recipe, Tag
+from app.models import Recipe, Tag, Note
 from app.image_utils import download_image, delete_image, validate_url
 
 # Blueprint for main pages
@@ -9,6 +9,10 @@ main_bp = Blueprint('main', __name__)
 
 # Blueprint for API endpoints
 api_bp = Blueprint('api', __name__)
+
+# Constants for validation
+MAX_NOTE_LENGTH = 2000
+MAX_TAG_NAME_LENGTH = 100
 
 
 # ============================================================================
@@ -177,8 +181,14 @@ def create_recipe():
     # Handle tags using get_or_create method
     if 'tags' in data:
         for tag_data in data['tags']:
+            # Validate tag name length
+            tag_name = tag_data.get('name', '')
+            if len(tag_name) > MAX_TAG_NAME_LENGTH:
+                return jsonify({
+                    'error': f'Tag name exceeds maximum length of {MAX_TAG_NAME_LENGTH} characters'
+                }), 400
             tag, _ = Tag.get_or_create(
-                name=tag_data['name'],
+                name=tag_name,
                 tag_type=tag_data.get('tag_type', 'custom')
             )
             recipe.tags.append(tag)
@@ -262,8 +272,14 @@ def update_recipe(recipe_id):
     if 'tags' in data:
         recipe.tags = []
         for tag_data in data['tags']:
+            # Validate tag name length
+            tag_name = tag_data.get('name', '')
+            if len(tag_name) > MAX_TAG_NAME_LENGTH:
+                return jsonify({
+                    'error': f'Tag name exceeds maximum length of {MAX_TAG_NAME_LENGTH} characters'
+                }), 400
             tag, _ = Tag.get_or_create(
-                name=tag_data['name'],
+                name=tag_name,
                 tag_type=tag_data.get('tag_type', 'custom')
             )
             recipe.tags.append(tag)
@@ -330,6 +346,114 @@ def get_random_recipes():
     # Use database-level random sampling
     recipes = Recipe.query.order_by(func.random()).limit(count).all()
     return jsonify([recipe.to_dict() for recipe in recipes])
+
+
+# ============================================================================
+# Notes API Routes
+# ============================================================================
+
+@api_bp.route('/recipes/<int:recipe_id>/notes', methods=['GET'])
+def get_recipe_notes(recipe_id):
+    """Get all notes for a recipe.
+    
+    Args:
+        recipe_id: Recipe ID
+    
+    Returns:
+        JSON array of notes
+    """
+    recipe = Recipe.query.get_or_404(recipe_id)
+    notes = recipe.notes.order_by(Note.created_at.desc()).all()
+    return jsonify([note.to_dict() for note in notes])
+
+
+@api_bp.route('/recipes/<int:recipe_id>/notes', methods=['POST'])
+def create_note(recipe_id):
+    """Create a new note for a recipe.
+    
+    Args:
+        recipe_id: Recipe ID
+    
+    Request Body (JSON):
+        content: (required) Note content
+    
+    Returns:
+        JSON object of created note with 201 status
+    """
+    recipe = Recipe.query.get_or_404(recipe_id)
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    if 'content' not in data or not data['content'].strip():
+        return jsonify({'error': 'Content is required'}), 400
+    
+    # Validate note content length
+    if len(data['content']) > MAX_NOTE_LENGTH:
+        return jsonify({
+            'error': f'Note exceeds maximum length of {MAX_NOTE_LENGTH} characters'
+        }), 400
+    
+    note = Note(
+        recipe_id=recipe_id,
+        content=data['content'].strip()
+    )
+    
+    db.session.add(note)
+    db.session.commit()
+    
+    return jsonify(note.to_dict()), 201
+
+
+@api_bp.route('/notes/<int:note_id>', methods=['PUT'])
+def update_note(note_id):
+    """Update an existing note.
+    
+    Args:
+        note_id: Note ID
+    
+    Request Body (JSON):
+        content: (required) Updated note content
+    
+    Returns:
+        JSON object of updated note
+    """
+    note = Note.query.get_or_404(note_id)
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    if 'content' not in data or not data['content'].strip():
+        return jsonify({'error': 'Content is required'}), 400
+    
+    # Validate note content length
+    if len(data['content']) > MAX_NOTE_LENGTH:
+        return jsonify({
+            'error': f'Note exceeds maximum length of {MAX_NOTE_LENGTH} characters'
+        }), 400
+    
+    note.content = data['content'].strip()
+    db.session.commit()
+    
+    return jsonify(note.to_dict())
+
+
+@api_bp.route('/notes/<int:note_id>', methods=['DELETE'])
+def delete_note(note_id):
+    """Delete a note.
+    
+    Args:
+        note_id: Note ID
+    
+    Returns:
+        Empty response with 204 status
+    """
+    note = Note.query.get_or_404(note_id)
+    db.session.delete(note)
+    db.session.commit()
+    return '', 204
 
 
 @api_bp.route('/health', methods=['GET'])

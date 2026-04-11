@@ -30,6 +30,7 @@ class Recipe(db.Model):
         created_at: Creation timestamp
         updated_at: Last update timestamp
         tags: Related tags (many-to-many relationship)
+        notes: Related notes (one-to-many relationship)
     """
     __tablename__ = 'recipes'
     
@@ -53,6 +54,14 @@ class Recipe(db.Model):
         secondary=recipe_tags,
         backref=db.backref('recipes', lazy='dynamic'),
         lazy='select'
+    )
+    
+    # One-to-many relationship with notes
+    notes = db.relationship(
+        'Note',
+        backref=db.backref('recipe', lazy='select'),
+        lazy='dynamic',
+        cascade='all, delete-orphan'
     )
     
     @property
@@ -81,6 +90,7 @@ class Recipe(db.Model):
             'difficulty': self.difficulty,
             'total_time': self.total_time,
             'tags': [tag.to_dict() for tag in self.tags],
+            'notes': [note.to_dict() for note in self.notes],
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
@@ -113,11 +123,15 @@ class Tag(db.Model):
     name = db.Column(db.String(100), nullable=False)
     tag_type = db.Column(db.String(50), nullable=False, default='custom')
     
-    # Database-level constraint to enforce valid tag types
+    # Database-level constraint to enforce valid tag types and name length
     __table_args__ = (
         CheckConstraint(
             "tag_type IN ('cuisine', 'protein', 'spice_level', 'ingredient', 'custom')",
             name='ck_tag_type_valid'
+        ),
+        CheckConstraint(
+            "LENGTH(name) <= 100",
+            name='ck_tag_name_length'
         ),
     )
     
@@ -173,3 +187,43 @@ class Tag(db.Model):
     
     def __repr__(self):
         return f'<Tag {self.name} ({self.tag_type})>'
+
+
+class Note(db.Model):
+    """Note model for adding notes to recipes.
+    
+    Attributes:
+        id: Unique identifier
+        recipe_id: Foreign key to the associated recipe
+        content: Note content (text)
+        created_at: Creation timestamp
+        updated_at: Last update timestamp
+    """
+    __tablename__ = 'notes'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    recipe_id = db.Column(db.Integer, db.ForeignKey('recipes.id'), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Database-level constraint to enforce content length
+    __table_args__ = (
+        CheckConstraint(
+            "LENGTH(content) <= 2000",
+            name='ck_note_content_length'
+        ),
+    )
+    
+    def to_dict(self):
+        """Convert note to dictionary representation."""
+        return {
+            'id': self.id,
+            'recipe_id': self.recipe_id,
+            'content': self.content,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+    
+    def __repr__(self):
+        return f'<Note {self.id} for Recipe {self.recipe_id}>'
