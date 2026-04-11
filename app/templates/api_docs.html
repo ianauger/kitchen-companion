@@ -1,0 +1,228 @@
+{% extends "layout.html" %}
+
+{% block title %}API Reference - Kitchen Companion{% endblock %}
+
+{% block content %}
+<div class="p-8 max-w-4xl">
+    <!-- Page Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-2">API Reference</h1>
+        <p class="text-gray-600">Complete documentation for the Kitchen Companion REST API endpoints.</p>
+    </div>
+    
+    <!-- Base URL -->
+    <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-3">Base URL</h2>
+        <code class="block bg-gray-900 text-green-400 p-4 rounded-xl font-mono text-sm overflow-x-auto">
+            http://localhost:5000/api
+        </code>
+    </div>
+    
+    <!-- Endpoints -->
+    <div class="space-y-6">
+        <!-- GET /recipes -->
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100">
+                <div class="flex items-center space-x-3">
+                    <span class="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">GET</span>
+                    <code class="text-lg font-mono font-semibold text-gray-900">/recipes</code>
+                </div>
+                <p class="text-gray-600 mt-2">Retrieve all recipes with optional filtering.</p>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <h4 class="text-sm font-semibold text-gray-700 mb-2">Query Parameters</h4>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-left border-b border-gray-200">
+                                    <th class="py-2 pr-4 font-medium text-gray-600">Parameter</th>
+                                    <th class="py-2 pr-4 font-medium text-gray-600">Type</th>
+                                    <th class="py-2 font-medium text-gray-600">Description</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                <tr>
+                                    <td class="py-2 pr-4 font-mono text-primary-600">tag</td>
+                                    <td class="py-2 pr-4 text-gray-500">string</td>
+                                    <td class="py-2 text-gray-600">Filter by tag name</td>
+                                </tr>
+                                <tr>
+                                    <td class="py-2 pr-4 font-mono text-primary-600">tag_type</td>
+                                    <td class="py-2 pr-4 text-gray-500">string</td>
+                                    <td class="py-2 text-gray-600">Filter by tag type (cuisine, protein, spice_level, ingredient, custom)</td>
+                                </tr>
+                                <tr>
+                                    <td class="py-2 pr-4 font-mono text-primary-600">difficulty</td>
+                                    <td class="py-2 pr-4 text-gray-500">string</td>
+                                    <td class="py-2 text-gray-600">Filter by difficulty (easy, medium, hard)</td>
+                                </tr>
+                                <tr>
+                                    <td class="py-2 pr-4 font-mono text-primary-600">search</td>
+                                    <td class="py-2 pr-4 text-gray-500">string</td>
+                                    <td class="py-2 text-gray-600">Search recipes by title (case-insensitive)</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div>
+                    <h4 class="text-sm font-semibold text-gray-700 mb-2">Example Response</h4>
+                    <pre class="bg-gray-900 text-gray-100 p-4 rounded-xl overflow-x-auto text-sm"><code>[
+  {
+    "id": 1,
+    "title": "Spicy Thai Basil Chicken",
+    "source_url": null,
+    "image_url": "https://example.com/image.jpg",
+    "image_path": "uploads/recipes/recipe_1_xxx.jpg",
+    "instructions": "...",
+    "cooking_time": 20,
+    "prep_time": 10,
+    "servings": 4,
+    "difficulty": "medium",
+    "tags": [
+      {"id": 1, "name": "Thai", "tag_type": "cuisine"}
+    ]
+  }
+]</code></pre>
+                </div>
+            </div>
+        </div>
+        
+        <!-- POST /recipes -->
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100">
+                <div class="flex items-center space-x-3">
+                    <span class="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">POST</span>
+                    <code class="text-lg font-mono font-semibold text-gray-900">/recipes</code>
+                </div>
+                <p class="text-gray-600 mt-2">Create a new recipe. Optionally provide <code class="bg-gray-100 px-1 rounded">image_url</code> to have the image downloaded and stored locally.</p>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <h4 class="text-sm font-semibold text-gray-700 mb-2">Request Body</h4>
+                    <pre class="bg-gray-900 text-gray-100 p-4 rounded-xl overflow-x-auto text-sm"><code>{
+  "title": "Spicy Thai Basil Chicken",
+  "instructions": "1. Heat oil in a wok...\n2. Add garlic and chili...",
+  "source_url": "https://example.com/recipe",
+  "image_url": "https://example.com/cover.jpg",
+  "cooking_time": 20,
+  "prep_time": 10,
+  "servings": 4,
+  "difficulty": "medium",
+  "tags": [
+    {"name": "Thai", "tag_type": "cuisine"},
+    {"name": "chicken", "tag_type": "protein"},
+    {"name": "spicy", "tag_type": "spice_level"}
+  ]
+}</code></pre>
+                </div>
+                <div>
+                    <h4 class="text-sm font-semibold text-gray-700 mb-2">Required Fields</h4>
+                    <ul class="list-disc list-inside text-sm text-gray-600 space-y-1">
+                        <li><code class="bg-gray-100 px-1 rounded">title</code> — Recipe name</li>
+                        <li><code class="bg-gray-100 px-1 rounded">instructions</code> — Cooking instructions</li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="text-sm font-semibold text-gray-700 mb-2">Response</h4>
+                    <p class="text-sm text-gray-600">Returns the created recipe object with <code class="bg-gray-100 px-1 rounded">201 Created</code> status. The <code class="bg-gray-100 px-1 rounded">image_path</code> field will contain the local path if an <code class="bg-gray-100 px-1 rounded">image_url</code> was provided.</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- GET /recipes/:id -->
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100">
+                <div class="flex items-center space-x-3">
+                    <span class="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">GET</span>
+                    <code class="text-lg font-mono font-semibold text-gray-900">/recipes/&lt;id&gt;</code>
+                </div>
+                <p class="text-gray-600 mt-2">Retrieve a specific recipe by ID.</p>
+            </div>
+            <div class="p-6">
+                <p class="text-sm text-gray-600">Returns a single recipe object or <code class="bg-gray-100 px-1 rounded">404 Not Found</code> if the recipe doesn't exist.</p>
+            </div>
+        </div>
+        
+        <!-- PUT /recipes/:id -->
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100">
+                <div class="flex items-center space-x-3">
+                    <span class="px-3 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">PUT</span>
+                    <code class="text-lg font-mono font-semibold text-gray-900">/recipes/&lt;id&gt;</code>
+                </div>
+                <p class="text-gray-600 mt-2">Update an existing recipe. If <code class="bg-gray-100 px-1 rounded">image_url</code> is provided and differs from the current value, the new image will be downloaded and the old local image deleted.</p>
+            </div>
+            <div class="p-6">
+                <p class="text-sm text-gray-600">Include only the fields you want to update in the request body.</p>
+            </div>
+        </div>
+        
+        <!-- DELETE /recipes/:id -->
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100">
+                <div class="flex items-center space-x-3">
+                    <span class="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">DELETE</span>
+                    <code class="text-lg font-mono font-semibold text-gray-900">/recipes/&lt;id&gt;</code>
+                </div>
+                <p class="text-gray-600 mt-2">Delete a recipe and its associated local image file.</p>
+            </div>
+            <div class="p-6">
+                <p class="text-sm text-gray-600">Returns <code class="bg-gray-100 px-1 rounded">204 No Content</code> on success. Also deletes the locally stored cover image if one exists.</p>
+            </div>
+        </div>
+        
+        <!-- GET /recipes/random -->
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100">
+                <div class="flex items-center space-x-3">
+                    <span class="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">GET</span>
+                    <code class="text-lg font-mono font-semibold text-gray-900">/recipes/random</code>
+                </div>
+                <p class="text-gray-600 mt-2">Get a random selection of recipes.</p>
+            </div>
+            <div class="p-6">
+                <h4 class="text-sm font-semibold text-gray-700 mb-2">Query Parameters</h4>
+                <p class="text-sm text-gray-600"><code class="bg-gray-100 px-1 rounded">count</code> — Number of recipes to return (default: 6, max: 20)</p>
+            </div>
+        </div>
+        
+        <!-- GET /tags -->
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100">
+                <div class="flex items-center space-x-3">
+                    <span class="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">GET</span>
+                    <code class="text-lg font-mono font-semibold text-gray-900">/tags</code>
+                </div>
+                <p class="text-gray-600 mt-2">Retrieve all tags with optional filtering.</p>
+            </div>
+            <div class="p-6">
+                <p class="text-sm text-gray-600 mb-2">Use <code class="bg-gray-100 px-1 rounded">?tag_type=cuisine</code> to filter by tag type.</p>
+                <h4 class="text-sm font-semibold text-gray-700 mb-2">Tag Types</h4>
+                <ul class="text-sm text-gray-600 space-y-1">
+                    <li><code class="bg-gray-100 px-1 rounded">cuisine</code> — Italian, Thai, Indian, etc.</li>
+                    <li><code class="bg-gray-100 px-1 rounded">protein</code> — chicken, beef, tofu, etc.</li>
+                    <li><code class="bg-gray-100 px-1 rounded">spice_level</code> — mild, medium, hot</li>
+                    <li><code class="bg-gray-100 px-1 rounded">ingredient</code> — specific ingredient tags</li>
+                    <li><code class="bg-gray-100 px-1 rounded">custom</code> — user-defined tags</li>
+                </ul>
+            </div>
+        </div>
+        
+        <!-- GET /health -->
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100">
+                <div class="flex items-center space-x-3">
+                    <span class="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-bold rounded-full">GET</span>
+                    <code class="text-lg font-mono font-semibold text-gray-900">/health</code>
+                </div>
+                <p class="text-gray-600 mt-2">Health check endpoint.</p>
+            </div>
+            <div class="p-6">
+                <pre class="bg-gray-900 text-gray-100 p-4 rounded-xl overflow-x-auto text-sm"><code>{"status": "healthy"}</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

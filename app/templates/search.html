@@ -1,0 +1,418 @@
+{% extends "layout.html" %}
+
+{% block title %}Search - Kitchen Companion{% endblock %}
+
+{% block content %}
+<div class="p-8">
+    <!-- Page Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-2">Search Recipes</h1>
+        <p class="text-gray-600">Find exactly what you're looking for by name, cuisine, protein, or spice level.</p>
+    </div>
+    
+    <!-- Search Interface -->
+    <div class="bg-white rounded-2xl shadow-lg p-6 mb-8">
+        <!-- Search Input -->
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Search by Name</label>
+            <div class="relative">
+                <input type="text" id="searchInput" placeholder="Search recipes..." 
+                       class="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all">
+                <svg class="absolute left-4 top-3.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+                <div id="searchLoading" class="hidden absolute right-4 top-3.5">
+                    <svg class="animate-spin h-5 w-5 text-primary-500" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Time Filters -->
+        <div class="mb-6 p-4 bg-gray-50 rounded-xl">
+            <div class="flex items-center mb-3">
+                <svg class="w-5 h-5 text-gray-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span class="text-sm font-medium text-gray-700">Time Filters</span>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Max Prep Time</label>
+                    <select id="prepTimeFilter" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        <option value="">Any prep time</option>
+                        <option value="10">≤ 10 min</option>
+                        <option value="20">≤ 20 min</option>
+                        <option value="30">≤ 30 min</option>
+                        <option value="60">≤ 1 hour</option>
+                        <option value="90">≤ 1.5 hours</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Max Cooking Time</label>
+                    <select id="cookingTimeFilter" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        <option value="">Any cooking time</option>
+                        <option value="15">≤ 15 min</option>
+                        <option value="30">≤ 30 min</option>
+                        <option value="45">≤ 45 min</option>
+                        <option value="60">≤ 1 hour</option>
+                        <option value="120">≤ 2 hours</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Max Total Time</label>
+                    <select id="totalTimeFilter" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        <option value="">Any total time</option>
+                        <option value="30">≤ 30 min</option>
+                        <option value="60">≤ 1 hour</option>
+                        <option value="90">≤ 1.5 hours</option>
+                        <option value="120">≤ 2 hours</option>
+                        <option value="180">≤ 3 hours</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tag Filters -->
+        <div id="tagFilters">
+            {% if tags_by_type %}
+            <div class="space-y-4">
+                {% for type, type_tags in tags_by_type.items() %}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        {{ type.replace('_', ' ').title() }}
+                    </label>
+                    <div class="flex flex-wrap gap-2">
+                        {% for tag in type_tags %}
+                        <button class="tag-filter px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-primary-100 hover:text-primary-700 transition-colors"
+                                  data-tag="{{ tag.name }}">
+                            {{ tag.name }}
+                        </button>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Results Section -->
+    <div id="resultsSection">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-semibold text-gray-900">Results</h2>
+            <span id="resultCount" class="text-sm text-gray-500">Loading...</span>
+        </div>
+        
+        <div id="resultsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Results will be populated by JavaScript -->
+        </div>
+        
+        <!-- No Results State -->
+        <div id="noResults" class="hidden text-center py-16">
+            <div class="text-6xl mb-4">🔍</div>
+            <h3 class="text-xl font-semibold text-gray-900 mb-2">No recipes found</h3>
+            <p class="text-gray-600">Try adjusting your search or filters.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let allRecipes = [];
+    let activeTags = new Set();
+    let searchTerm = '';
+    let maxPrepTime = null;
+    let maxCookingTime = null;
+    let maxTotalTime = null;
+    let searchDebounceTimer = null;
+    let isLoading = false;
+    
+    // Load all recipes on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        fetchRecipes();
+        
+        // Set up event listeners
+        document.getElementById('searchInput').addEventListener('input', handleSearchDebounced);
+        document.getElementById('prepTimeFilter').addEventListener('change', handleTimeFilter);
+        document.getElementById('cookingTimeFilter').addEventListener('change', handleTimeFilter);
+        document.getElementById('totalTimeFilter').addEventListener('change', handleTimeFilter);
+        
+        // Set up tag filter event listeners
+        document.querySelectorAll('.tag-filter').forEach(button => {
+            button.addEventListener('click', function() {
+                toggleTag(this);
+            });
+        });
+    });
+    
+    async function fetchRecipes() {
+        setLoading(true);
+        try {
+            const response = await fetch('/api/recipes');
+            const data = await response.json();
+            allRecipes = data;
+            filterAndDisplay();
+        } catch (error) {
+            console.error('Error fetching recipes:', error);
+            showError('Error loading recipes. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    }
+    
+    function handleSearchDebounced() {
+        if (searchDebounceTimer) {
+            clearTimeout(searchDebounceTimer);
+        }
+        searchDebounceTimer = setTimeout(() => {
+            searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            filterAndDisplay();
+        }, 300);
+    }
+    
+    function handleTimeFilter() {
+        const prepSelect = document.getElementById('prepTimeFilter');
+        const cookingSelect = document.getElementById('cookingTimeFilter');
+        const totalSelect = document.getElementById('totalTimeFilter');
+        
+        maxPrepTime = prepSelect.value ? parseInt(prepSelect.value) : null;
+        maxCookingTime = cookingSelect.value ? parseInt(cookingSelect.value) : null;
+        maxTotalTime = totalSelect.value ? parseInt(totalSelect.value) : null;
+        
+        filterAndDisplay();
+    }
+    
+    function toggleTag(button) {
+        const tagName = button.dataset.tag;
+        
+        if (activeTags.has(tagName)) {
+            activeTags.delete(tagName);
+            button.classList.remove('bg-primary-600', 'text-white', 'ring-2', 'ring-primary-400');
+            button.classList.add('bg-gray-100', 'text-gray-700');
+        } else {
+            activeTags.add(tagName);
+            button.classList.remove('bg-gray-100', 'text-gray-700');
+            button.classList.add('bg-primary-600', 'text-white', 'ring-2', 'ring-primary-400');
+        }
+        
+        filterAndDisplay();
+    }
+    
+    function filterAndDisplay() {
+        const filtered = allRecipes.filter(recipe => {
+            // Search by title
+            if (searchTerm && !recipe.title.toLowerCase().includes(searchTerm)) {
+                return false;
+            }
+            
+            // Filter by tags (MUST match ALL selected tags)
+            if (activeTags.size > 0) {
+                const recipeTagNames = recipe.tags.map(t => t.name);
+                const hasAllTags = Array.from(activeTags).every(tag => recipeTagNames.includes(tag));
+                if (!hasAllTags) return false;
+            }
+            
+            // Filter by prep time
+            if (maxPrepTime !== null && recipe.prep_time !== null && recipe.prep_time > maxPrepTime) {
+                return false;
+            }
+            
+            // Filter by cooking time
+            if (maxCookingTime !== null && recipe.cooking_time !== null && recipe.cooking_time > maxCookingTime) {
+                return false;
+            }
+            
+            // Filter by total time
+            if (maxTotalTime !== null) {
+                const totalTime = (recipe.prep_time || 0) + (recipe.cooking_time || 0);
+                if (totalTime > maxTotalTime && totalTime > 0) {
+                    return false;
+                }
+            }
+            
+            return true;
+        });
+        
+        displayResults(filtered);
+    }
+    
+    function formatTime(minutes) {
+        if (minutes === null || minutes === undefined) return null;
+        if (minutes < 60) return `${minutes}m`;
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+    }
+    
+    function escapeHtml(text) {
+        if (typeof text !== 'string') return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    function setLoading(loading) {
+        isLoading = loading;
+        const searchLoading = document.getElementById('searchLoading');
+        if (loading) {
+            searchLoading.classList.remove('hidden');
+        } else {
+            searchLoading.classList.add('hidden');
+        }
+    }
+    
+    function showError(message) {
+        const grid = document.getElementById('resultsGrid');
+        grid.innerHTML = '';
+        
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'col-span-full text-center text-red-500 py-8';
+        errorDiv.textContent = message;
+        grid.appendChild(errorDiv);
+    }
+    
+    function displayResults(recipes) {
+        const grid = document.getElementById('resultsGrid');
+        const countEl = document.getElementById('resultCount');
+        const noResults = document.getElementById('noResults');
+        
+        // Clear existing content
+        grid.innerHTML = '';
+        
+        countEl.textContent = `${recipes.length} recipe${recipes.length !== 1 ? 's' : ''}`;
+        
+        if (recipes.length === 0) {
+            noResults.classList.remove('hidden');
+            return;
+        }
+        
+        noResults.classList.add('hidden');
+        
+        recipes.forEach(recipe => {
+            const card = document.createElement('a');
+            card.href = `/recipe/${escapeHtml(String(recipe.id))}`;
+            card.className = 'bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-2xl transition-all duration-300 group block';
+            
+            // Image container
+            const imageContainer = document.createElement('div');
+            imageContainer.className = 'h-48 overflow-hidden relative';
+            
+            if (recipe.image_path) {
+                const img = document.createElement('img');
+                img.src = `/static/${escapeHtml(recipe.image_path)}`;
+                img.alt = recipe.title;
+                img.className = 'w-full h-full object-cover hover:scale-105 transition-transform duration-500';
+                imageContainer.appendChild(img);
+            } else if (recipe.image_url) {
+                const img = document.createElement('img');
+                img.src = escapeHtml(recipe.image_url);
+                img.alt = recipe.title;
+                img.className = 'w-full h-full object-cover hover:scale-105 transition-transform duration-500';
+                imageContainer.appendChild(img);
+            } else {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'w-full h-full bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center';
+                const span = document.createElement('span');
+                span.className = 'text-6xl';
+                span.textContent = '🍽️';
+                placeholder.appendChild(span);
+                imageContainer.appendChild(placeholder);
+            }
+            
+            // Difficulty badge
+            const badge = document.createElement('div');
+            badge.className = 'absolute top-3 right-3';
+            const badgeSpan = document.createElement('span');
+            badgeSpan.className = 'px-3 py-1 bg-white/90 backdrop-blur text-xs font-semibold rounded-full shadow-sm';
+            badgeSpan.textContent = recipe.difficulty ? (recipe.difficulty.charAt(0).toUpperCase() + recipe.difficulty.slice(1)) : 'Unknown';
+            badge.appendChild(badgeSpan);
+            imageContainer.appendChild(badge);
+            
+            card.appendChild(imageContainer);
+            
+            // Content
+            const content = document.createElement('div');
+            content.className = 'p-5';
+            
+            // Title
+            const title = document.createElement('h3');
+            title.className = 'text-lg font-bold text-gray-900 mb-2 line-clamp-2 group-hover:text-primary-600 transition-colors';
+            title.textContent = recipe.title;
+            content.appendChild(title);
+            
+            // Time info
+            const prepTime = recipe.prep_time ? formatTime(recipe.prep_time) : null;
+            const cookingTime = recipe.cooking_time ? formatTime(recipe.cooking_time) : null;
+            const totalTime = (recipe.prep_time || recipe.cooking_time) 
+                ? formatTime((recipe.prep_time || 0) + (recipe.cooking_time || 0))
+                : null;
+            
+            if (totalTime) {
+                const timeDiv = document.createElement('div');
+                timeDiv.className = 'flex items-center text-sm text-gray-600 mb-2';
+                timeDiv.innerHTML = `
+                    <svg class="w-4 h-4 mr-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <span class="font-medium text-gray-700">Total: ${escapeHtml(totalTime)}</span>
+                `;
+                content.appendChild(timeDiv);
+                
+                if (prepTime || cookingTime) {
+                    const breakdownDiv = document.createElement('div');
+                    breakdownDiv.className = 'flex items-center gap-3 text-xs text-gray-500 mb-3';
+                    if (prepTime) {
+                        breakdownDiv.innerHTML += `<span class="flex items-center">🥕 Prep: ${escapeHtml(prepTime)}</span>`;
+                    }
+                    if (cookingTime) {
+                        breakdownDiv.innerHTML += `<span class="flex items-center">🔥 Cook: ${escapeHtml(cookingTime)}</span>`;
+                    }
+                    content.appendChild(breakdownDiv);
+                }
+            }
+            
+            // Servings
+            if (recipe.servings) {
+                const servingsDiv = document.createElement('div');
+                servingsDiv.className = 'flex items-center text-sm text-gray-500';
+                servingsDiv.innerHTML = `
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                    </svg>
+                    <span>${escapeHtml(String(recipe.servings))} servings</span>
+                `;
+                content.appendChild(servingsDiv);
+            }
+            
+            // Tags
+            if (recipe.tags && recipe.tags.length > 0) {
+                const tagsContainer = document.createElement('div');
+                tagsContainer.className = 'flex flex-wrap gap-2 mt-3';
+                
+                recipe.tags.slice(0, 3).forEach(tag => {
+                    const tagSpan = document.createElement('span');
+                    tagSpan.className = 'px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-md';
+                    tagSpan.textContent = tag.name;
+                    tagsContainer.appendChild(tagSpan);
+                });
+                
+                if (recipe.tags.length > 3) {
+                    const moreSpan = document.createElement('span');
+                    moreSpan.className = 'px-2 py-1 text-gray-400 text-xs';
+                    moreSpan.textContent = `+${recipe.tags.length - 3}`;
+                    tagsContainer.appendChild(moreSpan);
+                }
+                
+                content.appendChild(tagsContainer);
+            }
+            
+            card.appendChild(content);
+            grid.appendChild(card);
+        });
+    }
+</script>
+{% endblock %}

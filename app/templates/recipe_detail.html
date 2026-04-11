@@ -1,0 +1,86 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ recipe.title }} - Kitchen Companion{% endblock %}
+
+{% block content %}
+<div class="p-8 max-w-5xl mx-auto">
+    <!-- Back Button -->
+    <a href="/" class="inline-flex items-center space-x-2 text-gray-500 hover:text-primary-600 transition-colors mb-6 group">
+        <svg class="w-4 h-4 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+        </svg>
+        <span>Back to Home</span>
+    </a>
+
+    <div class="bg-white rounded-3xl shadow-xl overflow-hidden">
+        <!-- Hero Image -->
+        <div class="h-96 relative">
+            {% if recipe.image_path %}
+            <img src="{{ url_for('static', filename=recipe.image_path) }}" alt="{{ recipe.title }}" class="w-full h-full object-cover">
+            {% elif recipe.image_url %}
+            <img src="{{ recipe.image_url }}" alt="{{ recipe.title }}" class="w-full h-full object-cover">
+            {% else %}
+            <div class="w-full h-full bg-gray-200 flex items-center justify-center text-6xl">🍽️</div>
+            {% endif %}
+            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-8 text-white">
+                <h1 class="text-4xl font-bold mb-2">{{ recipe.title }}</h1>
+                <div class="flex flex-wrap gap-3">
+                    {% for tag in recipe.tags %}
+                    <span class="px-3 py-1 bg-white/20 backdrop-blur rounded-full text-sm font-medium">{{ tag.name }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="p-8 grid grid-cols-1 lg:grid-cols-3 gap-12">
+            <!-- Quick Stats & Ingredients -->
+            <div class="space-y-6">
+                <div class="bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                    <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Quick Info</h3>
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between">
+                            <span class="text-gray-600">Difficulty</span>
+                            <span class="font-bold text-gray-900">{{ recipe.difficulty|capitalize }}</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-gray-600">Prep Time</span>
+                            <span class="font-bold text-gray-900">{{ recipe.prep_time or 'N/A' }} min</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-gray-600">Cook Time</span>
+                            <span class="font-bold text-gray-900">{{ recipe.cooking_time or 'N/A' }} min</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-gray-600">Servings</span>
+                            <span class="font-bold text-gray-900">{{ recipe.servings or 'N/A' }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {% if recipe.ingredients %}
+                <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Ingredients</h3>
+                    <div class="text-gray-600 whitespace-pre-line leading-relaxed">
+                        {{ recipe.ingredients }}
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% if recipe.source_url %}
+                <a href="{{ recipe.source_url }}" target="_blank" class="block w-full text-center px-6 py-3 bg-primary-600 text-white font-bold rounded-xl hover:bg-primary-700 transition-colors shadow-lg">
+                    Visit Original Source
+                </a>
+                {% endif %}
+            </div>
+
+            <!-- Instructions -->
+            <div class="lg:col-span-2">
+                <h3 class="text-2xl font-bold text-gray-900 mb-6">Instructions</h3>
+                <div class="prose prose-lg text-gray-600 whitespace-pre-line leading-relaxed">
+                    {{ recipe.instructions }}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,120 @@
+{% extends "layout.html" %}
+
+{% block title %}Home - Kitchen Companion{% endblock %}
+
+{% block content %}
+<div class="p-8">
+    <!-- Page Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-2">Welcome to Kitchen Companion</h1>
+        <p class="text-gray-600">Discover delicious recipes and organize your culinary adventures. Here's a random selection for inspiration.</p>
+    </div>
+    
+    {% if recipes %}
+    <!-- Recipe Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {% for recipe in recipes %}
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-2xl transition-all duration-300 group">
+            <!-- Recipe Image -->
+            <a href="{{ url_for('main.get_recipe_detail', recipe_id=recipe.id) }}" class="h-48 overflow-hidden relative block">
+                {% if recipe.image_path %}
+                <img src="{{ url_for('static', filename=recipe.image_path) }}" alt="{{ recipe.title }}" 
+                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
+                {% elif recipe.image_url %}
+                <img src="{{ recipe.image_url }}" alt="{{ recipe.title }}" 
+                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
+                {% else %}
+                <div class="w-full h-full bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center">
+                    <span class="text-6xl">🍽️</span>
+                </div>
+                {% endif %}
+                
+                <div class="absolute top-3 right-3">
+                    <span class="px-3 py-1 bg-white/90 backdrop-blur text-xs font-semibold rounded-full shadow-sm">
+                        {{ recipe.difficulty|capitalize }}
+                    </span>
+                </div>
+            </a>
+            
+            <!-- Recipe Info -->
+            <div class="p-5">
+                <a href="{{ url_for('main.get_recipe_detail', recipe_id=recipe.id) }}">
+                    <h3 class="text-lg font-bold text-gray-900 mb-2 line-clamp-2 hover:text-primary-600 transition-colors">{{ recipe.title }}</h3>
+                </a>
+                
+                <div class="flex items-center text-sm text-gray-500 mb-3 space-x-4">
+                    {% if recipe.cooking_time %}
+                    <div class="flex items-center space-x-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span>{{ recipe.cooking_time }} min</span>
+                    </div>
+                    {% endif %}
+                    {% if recipe.servings %}
+                    <div class="flex items-center space-x-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                        </svg>
+                        <span>{{ recipe.servings }} servings</span>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Tags -->
+                {% if recipe.tags %}
+                <div class="flex flex-wrap gap-2">
+                    {% for tag in recipe.tags[:3] %}
+                    <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-md">
+                        {{ tag.name }}
+                    </span>
+                    {% endfor %}
+                    {% if recipe.tags|length > 3 %}
+                    <span class="px-2 py-1 text-gray-400 text-xs">+{{ recipe.tags|length - 3 }}</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <!-- Refresh Button -->
+    <div class="mt-8 text-center">
+        <button onclick="location.reload()" class="inline-flex items-center space-x-2 px-6 py-3 bg-primary-600 text-white font-medium rounded-xl hover:bg-primary-700 transition-colors shadow-lg hover:shadow-xl">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+            <span>Get Fresh Inspiration</span>
+        </button>
+    </div>
+    {% else %}
+    <!-- Empty State -->
+    <div class="text-center py-16">
+        <div class="text-6xl mb-4">📚</div>
+        <h2 class="text-xl font-semibold text-gray-900 mb-2">No recipes yet</h2>
+        <p class="text-gray-600 mb-6">Your cookbook is waiting to be filled with delicious creations!</p>
+        <a href="/api-docs" class="inline-flex items-center space-x-2 px-6 py-3 bg-primary-600 text-white font-medium rounded-xl hover:bg-primary-700 transition-colors">
+            <span>Check the API docs to add recipes</span>
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Fetch and display recipes dynamically if no server-side recipes
+    document.addEventListener('DOMContentLoaded', function() {
+        const recipeCards = document.querySelectorAll('.group');
+        recipeCards.forEach(card => {
+            card.addEventListener('mouseenter', function() {
+                this.classList.add('ring-2', 'ring-primary-300');
+            });
+            card.addEventListener('mouseleave', function() {
+                this.classList.remove('ring-2', 'ring-primary-300');
+            });
+        });
+    });
+</script>
+{% endblock %}

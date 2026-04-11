@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kitchen Companion</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🍳 Kitchen Companion</h1>
+            <p class="subtitle">Your Digital Cookbook</p>
+        </header>
+        
+        <main>
+            <section class="welcome">
+                <h2>Welcome!</h2>
+                <p>Kitchen Companion is your personal digital cookbook. Store, organize, and discover your favorite recipes.</p>
+            </section>
+            
+            <section class="features">
+                <h2>Features</h2>
+                <ul>
+                    <li>📚 Store and organize your recipes</li>
+                    <li>🏷️ Tag recipes by cuisine, protein, spice level, and more</li>
+                    <li>🔍 Search and filter your collection</li>
+                    <li>📱 Access from anywhere</li>
+                </ul>
+            </section>
+            
+            <section class="api-info">
+                <h2>API Endpoints</h2>
+                <div class="endpoint">
+                    <code>GET /api/recipes</code> - List all recipes
+                </div>
+                <div class="endpoint">
+                    <code>POST /api/recipes</code> - Create a new recipe
+                </div>
+                <div class="endpoint">
+                    <code>GET /api/recipes/&lt;id&gt;</code> - Get a specific recipe
+                </div>
+                <div class="endpoint">
+                    <code>PUT /api/recipes/&lt;id&gt;</code> - Update a recipe
+                </div>
+                <div class="endpoint">
+                    <code>DELETE /api/recipes/&lt;id&gt;</code> - Delete a recipe
+                </div>
+                <div class="endpoint">
+                    <code>GET /api/tags</code> - List all tags
+                </div>
+            </section>
+        </main>
+        
+        <footer>
+            <p>Kitchen Companion &copy; 2024</p>
+        </footer>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
