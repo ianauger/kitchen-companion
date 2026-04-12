@@ -9,18 +9,30 @@ env/
 ENV/
 env.bak/
 venv.bak/
+*.egg
+*.egg-info/
+dist/
+build/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
 
 # Flask
 instance/
 .webassets-cache
+.env
+.flaskenv
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
+*.db-journal
 
-# Uploads
-app/static/uploads/
+# Uploads (keep folder structure but ignore contents)
+app/static/uploads/*
+!app/static/uploads/.gitkeep
 
 # IDE
 .vscode/
@@ -28,7 +40,27 @@ app/static/uploads/
 *.swp
 *.swo
 *~
+*.sublime-project
+*.sublime-workspace
 
 # OS
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Migrations (keep folder, ignore compiled)
+migrations/versions/*.pyc
+migrations/__pycache__/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+
+# Logs
+*.log
+logs/

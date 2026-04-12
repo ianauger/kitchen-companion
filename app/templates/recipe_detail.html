@@ -14,7 +14,7 @@
 
     <div class="bg-white rounded-3xl shadow-xl overflow-hidden">
         <!-- Hero Image -->
-        <div class="h-64 md:h-96 relative">
+        <div class="h-48 md:h-96 relative">
             {% if recipe.image_path %}
             <img src="{{ url_for('static', filename=recipe.image_path) }}" alt="{{ recipe.title }}" class="w-full h-full object-cover">
             {% elif recipe.image_url %}

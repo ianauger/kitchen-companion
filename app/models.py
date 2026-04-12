@@ -35,17 +35,17 @@ class Recipe(db.Model):
     __tablename__ = 'recipes'
     
     id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(255), nullable=False)
+    title = db.Column(db.String(255), nullable=False, index=True)
     source_url = db.Column(db.String(500), nullable=True)
     image_url = db.Column(db.String(1000), nullable=True)
     image_path = db.Column(db.String(500), nullable=True)
     ingredients = db.Column(db.Text, nullable=True)
     instructions = db.Column(db.Text, nullable=False)
-    cooking_time = db.Column(db.Integer, nullable=True)  # minutes
-    prep_time = db.Column(db.Integer, nullable=True)  # minutes
+    cooking_time = db.Column(db.Integer, nullable=True, index=True)  # minutes
+    prep_time = db.Column(db.Integer, nullable=True, index=True)  # minutes
     servings = db.Column(db.Integer, nullable=True)
-    difficulty = db.Column(db.String(20), default='medium')  # easy, medium, hard
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    difficulty = db.Column(db.String(20), default='medium', index=True)  # easy, medium, hard
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Many-to-many relationship with tags
@@ -60,8 +60,9 @@ class Recipe(db.Model):
     notes = db.relationship(
         'Note',
         backref=db.backref('recipe', lazy='select'),
-        lazy='dynamic',
-        cascade='all, delete-orphan'
+        lazy='select',
+        cascade='all, delete-orphan',
+        order_by='Note.created_at.desc()'
     )
     
     @property
@@ -120,8 +121,8 @@ class Tag(db.Model):
     VALID_TYPES = ['cuisine', 'protein', 'spice_level', 'ingredient', 'custom']
     
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    tag_type = db.Column(db.String(50), nullable=False, default='custom')
+    name = db.Column(db.String(100), nullable=False, index=True)
+    tag_type = db.Column(db.String(50), nullable=False, default='custom', index=True)
     
     # Database-level constraint to enforce valid tag types and name length
     __table_args__ = (

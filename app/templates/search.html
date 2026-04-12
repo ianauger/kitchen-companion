@@ -3,7 +3,7 @@
 {% block title %}Search - Kitchen Companion{% endblock %}
 
 {% block content %}
-<div class="p-8">
+<div class="p-4 md:p-8">
     <!-- Page Header -->
     <div class="mb-8">
         <h1 class="text-3xl font-bold text-gray-900 mb-2">Search Recipes</h1>
@@ -306,12 +306,14 @@
                 img.src = `/static/${escapeHtml(recipe.image_path)}`;
                 img.alt = recipe.title;
                 img.className = 'w-full h-full object-cover hover:scale-105 transition-transform duration-500';
+                img.loading = 'lazy';
                 imageContainer.appendChild(img);
             } else if (recipe.image_url) {
                 const img = document.createElement('img');
                 img.src = escapeHtml(recipe.image_url);
                 img.alt = recipe.title;
                 img.className = 'w-full h-full object-cover hover:scale-105 transition-transform duration-500';
+                img.loading = 'lazy';
                 imageContainer.appendChild(img);
             } else {
                 const placeholder = document.createElement('div');

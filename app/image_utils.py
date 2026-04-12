@@ -7,14 +7,11 @@ import ipaddress
 from pathlib import Path
 from urllib.parse import urlparse
 from flask import current_app
+from config import MAX_DOWNLOAD_SIZE, DOWNLOAD_TIMEOUT, DOWNLOAD_CHUNK_SIZE
 
 
 # Directory where recipe images are stored (relative to app/static)
 UPLOAD_SUBDIR = 'uploads/recipes'
-
-# Security limits
-MAX_DOWNLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
-DOWNLOAD_TIMEOUT = 15  # seconds
 
 
 def get_upload_dir():
@@ -194,7 +191,7 @@ def download_image(image_url, recipe_id=None):
         # Download with size limit
         downloaded_size = 0
         with open(absolute_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
+            for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
                 downloaded_size += len(chunk)
                 if downloaded_size > MAX_DOWNLOAD_SIZE:
                     current_app.logger.warning(f'Image download exceeded max size')
@@ -270,8 +267,25 @@ def delete_image(image_path):
     if not image_path:
         return False
     
+    # Security: Prevent path traversal
+    if '..' in image_path or image_path.startswith('/'):
+        current_app.logger.warning(f'Blocked path traversal attempt: {image_path}')
+        return False
+    
     try:
         absolute_path = Path(current_app.static_folder) / image_path
+        
+        # Security: Ensure the resolved path is within the static folder
+        try:
+            resolved_path = absolute_path.resolve()
+            resolved_static = Path(current_app.static_folder).resolve()
+            if not str(resolved_path).startswith(str(resolved_static)):
+                current_app.logger.warning(f'Blocked path escape attempt: {image_path}')
+                return False
+        except (OSError, ValueError) as e:
+            current_app.logger.warning(f'Path resolution error for {image_path}: {e}')
+            return False
+        
         if absolute_path.exists():
             absolute_path.unlink()
             current_app.logger.info(f'Deleted image: {image_path}')

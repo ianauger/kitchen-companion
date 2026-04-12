@@ -3,7 +3,7 @@
 {% block title %}Home - Kitchen Companion{% endblock %}
 
 {% block content %}
-<div class="p-8">
+<div class="p-4 md:p-8">
     <!-- Page Header -->
     <div class="mb-8">
         <h1 class="text-3xl font-bold text-gray-900 mb-2">Welcome to Kitchen Companion</h1>
@@ -19,10 +19,12 @@
             <a href="{{ url_for('main.get_recipe_detail', recipe_id=recipe.id) }}" class="h-48 overflow-hidden relative block">
                 {% if recipe.image_path %}
                 <img src="{{ url_for('static', filename=recipe.image_path) }}" alt="{{ recipe.title }}" 
-                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
+                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                     loading="lazy">
                 {% elif recipe.image_url %}
                 <img src="{{ recipe.image_url }}" alt="{{ recipe.title }}" 
-                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
+                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                     loading="lazy">
                 {% else %}
                 <div class="w-full h-full bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center">
                     <span class="text-6xl">🍽️</span>

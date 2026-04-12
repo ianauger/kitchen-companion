@@ -1,18 +1,19 @@
 """Route handlers for Kitchen Companion application."""
-from flask import Blueprint, request, jsonify, render_template, url_for
-from app import db
+from flask import Blueprint, request, jsonify, render_template
+from app import db, limiter
 from app.models import Recipe, Tag, Note
 from app.image_utils import download_image, delete_image, validate_url
+from config import (
+    MAX_NOTE_LENGTH, MAX_TAG_NAME_LENGTH,
+    DEFAULT_PER_PAGE, MAX_PER_PAGE
+)
+from sqlalchemy.orm import joinedload
 
 # Blueprint for main pages
 main_bp = Blueprint('main', __name__)
 
 # Blueprint for API endpoints
 api_bp = Blueprint('api', __name__)
-
-# Constants for validation
-MAX_NOTE_LENGTH = 2000
-MAX_TAG_NAME_LENGTH = 100
 
 
 # ============================================================================
@@ -22,16 +23,23 @@ MAX_TAG_NAME_LENGTH = 100
 @main_bp.route('/')
 def index():
     """Render the home page with a random selection of 6 recipes."""
-    # Use database-level random sampling for efficiency
     from sqlalchemy import func
-    recipes_list = Recipe.query.order_by(func.random()).limit(6).all()
+    # Eager load tags and notes to avoid N+1 queries
+    recipes_list = Recipe.query.options(
+        joinedload(Recipe.tags),
+        joinedload(Recipe.notes)
+    ).order_by(func.random()).limit(6).all()
     return render_template('home.html', recipes=recipes_list)
 
 
 @main_bp.route('/recipe/<int:recipe_id>')
 def get_recipe_detail(recipe_id):
     """Render the detailed view of a single recipe."""
-    recipe = Recipe.query.get_or_404(recipe_id)
+    # Eager load tags and notes to avoid N+1 queries
+    recipe = Recipe.query.options(
+        joinedload(Recipe.tags),
+        joinedload(Recipe.notes)
+    ).get_or_404(recipe_id)
     return render_template('recipe_detail.html', recipe=recipe)
 
 
@@ -74,13 +82,23 @@ def get_recipes():
         max_prep_time: Filter by maximum prep time (minutes)
         max_cooking_time: Filter by maximum cooking time (minutes)
         max_total_time: Filter by maximum total time (prep + cooking)
+        page: Page number for pagination (default: 1)
+        per_page: Items per page (default: 20, max: 100)
     
     Returns:
-        JSON array of recipes
+        JSON object with recipes array and pagination info
     """
     from sqlalchemy import func, and_
     
-    query = Recipe.query
+    # Eager load tags and notes to avoid N+1 queries
+    query = Recipe.query.options(
+        joinedload(Recipe.tags),
+        joinedload(Recipe.notes)
+    )
+    
+    # Pagination
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', DEFAULT_PER_PAGE, type=int), MAX_PER_PAGE)
     
     # Apply filters if provided
     tag_name = request.args.get('tag')
@@ -98,6 +116,8 @@ def get_recipes():
     if difficulty:
         query = query.filter_by(difficulty=difficulty)
     if search_term:
+        # Limit search term length to prevent potential issues
+        search_term = search_term[:100]
         query = query.filter(Recipe.title.ilike(f'%{search_term}%'))
     
     # Filter by prep time - exclude NULL values when filtering
@@ -122,11 +142,24 @@ def get_recipes():
             )
         )
     
-    recipes = query.all()
-    return jsonify([recipe.to_dict() for recipe in recipes])
+    # Apply pagination
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    
+    return jsonify({
+        'recipes': [recipe.to_dict() for recipe in pagination.items],
+        'pagination': {
+            'total': pagination.total,
+            'pages': pagination.pages,
+            'current_page': page,
+            'per_page': per_page,
+            'has_next': pagination.has_next,
+            'has_prev': pagination.has_prev
+        }
+    })
 
 
 @api_bp.route('/recipes', methods=['POST'])
+@limiter.limit("10 per minute")
 def create_recipe():
     """Create a new recipe.
     
@@ -144,6 +177,8 @@ def create_recipe():
     Returns:
         JSON object of created recipe with 201 status
     """
+    from flask import current_app
+    
     data = request.get_json()
     
     if not data:
@@ -165,47 +200,66 @@ def create_recipe():
                 'details': error_msg
             }), 400
     
-    # Create recipe
-    recipe = Recipe(
-        title=data['title'],
-        instructions=data['instructions'],
-        ingredients=data.get('ingredients'),
-        source_url=data.get('source_url'),
-        image_url=image_url,
-        cooking_time=data.get('cooking_time'),
-        prep_time=data.get('prep_time'),
-        servings=data.get('servings'),
-        difficulty=data.get('difficulty', 'medium')
-    )
-    
-    # Handle tags using get_or_create method
-    if 'tags' in data:
-        for tag_data in data['tags']:
-            # Validate tag name length
-            tag_name = tag_data.get('name', '')
-            if len(tag_name) > MAX_TAG_NAME_LENGTH:
-                return jsonify({
-                    'error': f'Tag name exceeds maximum length of {MAX_TAG_NAME_LENGTH} characters'
-                }), 400
-            tag, _ = Tag.get_or_create(
-                name=tag_name,
-                tag_type=tag_data.get('tag_type', 'custom')
-            )
-            recipe.tags.append(tag)
-    
-    db.session.add(recipe)
-    db.session.flush()  # Get the recipe ID before downloading image
-    
-    # Download image if URL provided
-    if image_url:
-        relative_path, _ = download_image(image_url, recipe_id=recipe.id)
-        if relative_path:
-            recipe.image_path = relative_path
-            recipe.image_url = image_url
-    
-    db.session.commit()
-    
-    return jsonify(recipe.to_dict()), 201
+    recipe = None
+    try:
+        # Create recipe
+        recipe = Recipe(
+            title=data['title'],
+            instructions=data['instructions'],
+            ingredients=data.get('ingredients'),
+            source_url=data.get('source_url'),
+            image_url=image_url,
+            cooking_time=data.get('cooking_time'),
+            prep_time=data.get('prep_time'),
+            servings=data.get('servings'),
+            difficulty=data.get('difficulty', 'medium')
+        )
+        
+        # Handle tags using get_or_create method
+        if 'tags' in data:
+            for tag_data in data['tags']:
+                # Validate tag name length
+                tag_name = tag_data.get('name', '')
+                if len(tag_name) > MAX_TAG_NAME_LENGTH:
+                    db.session.rollback()
+                    return jsonify({
+                        'error': f'Tag name exceeds maximum length of {MAX_TAG_NAME_LENGTH} characters'
+                    }), 400
+                tag, _ = Tag.get_or_create(
+                    name=tag_name,
+                    tag_type=tag_data.get('tag_type', 'custom')
+                )
+                recipe.tags.append(tag)
+        
+        db.session.add(recipe)
+        db.session.flush()  # Get the recipe ID before downloading image
+        
+        # Download image if URL provided
+        image_downloaded = False
+        if image_url:
+            relative_path, error_msg = download_image(image_url, recipe_id=recipe.id)
+            if relative_path:
+                recipe.image_path = relative_path
+                recipe.image_url = image_url
+                image_downloaded = True
+            else:
+                # Log warning but don't fail - recipe is created without image
+                current_app.logger.warning(
+                    f'Failed to download image for recipe {recipe.id}: {error_msg}'
+                )
+        
+        db.session.commit()
+        
+        response_data = recipe.to_dict()
+        if image_url and not image_downloaded:
+            response_data['warning'] = 'Recipe created but image download failed'
+        
+        return jsonify(response_data), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Failed to create recipe: {e}')
+        return jsonify({'error': 'Failed to create recipe'}), 500
 
 
 @api_bp.route('/recipes/<int:recipe_id>', methods=['GET'])
@@ -218,7 +272,11 @@ def get_recipe(recipe_id):
     Returns:
         JSON object of the recipe or 404 error
     """
-    recipe = Recipe.query.get_or_404(recipe_id)
+    # Eager load tags and notes to avoid N+1 queries
+    recipe = Recipe.query.options(
+        joinedload(Recipe.tags),
+        joinedload(Recipe.notes)
+    ).get_or_404(recipe_id)
     return jsonify(recipe.to_dict())
 
 
@@ -343,8 +401,11 @@ def get_random_recipes():
     """
     from sqlalchemy import func
     count = min(request.args.get('count', 6, type=int), 20)
-    # Use database-level random sampling
-    recipes = Recipe.query.order_by(func.random()).limit(count).all()
+    # Use database-level random sampling with eager loading
+    recipes = Recipe.query.options(
+        joinedload(Recipe.tags),
+        joinedload(Recipe.notes)
+    ).order_by(func.random()).limit(count).all()
     return jsonify([recipe.to_dict() for recipe in recipes])
 
 
@@ -363,11 +424,12 @@ def get_recipe_notes(recipe_id):
         JSON array of notes
     """
     recipe = Recipe.query.get_or_404(recipe_id)
-    notes = recipe.notes.order_by(Note.created_at.desc()).all()
-    return jsonify([note.to_dict() for note in notes])
+    # Notes are now ordered by created_at.desc() via the relationship
+    return jsonify([note.to_dict() for note in recipe.notes])
 
 
 @api_bp.route('/recipes/<int:recipe_id>/notes', methods=['POST'])
+@limiter.limit("30 per minute")
 def create_note(recipe_id):
     """Create a new note for a recipe.
     
@@ -407,6 +469,7 @@ def create_note(recipe_id):
 
 
 @api_bp.route('/notes/<int:note_id>', methods=['PUT'])
+@limiter.limit("30 per minute")
 def update_note(note_id):
     """Update an existing note.
     

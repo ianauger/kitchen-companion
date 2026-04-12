@@ -36,21 +36,43 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body class="bg-gray-50 font-sans text-gray-800">
-    <div class="flex min-h-screen">
+    <!-- Mobile Header -->
+    <header class="md:hidden fixed top-0 left-0 right-0 z-40 bg-gradient-to-r from-primary-700 to-primary-900 text-white shadow-lg">
+        <div class="flex items-center justify-between px-4 py-3">
+            <div class="flex items-center space-x-3">
+                <div class="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow">
+                    <span class="text-xl">🍳</span>
+                </div>
+                <div>
+                    <h1 class="text-base font-bold leading-tight">Kitchen Companion</h1>
+                </div>
+            </div>
+            <button id="mobile-menu-btn" class="p-2 rounded-lg hover:bg-white/20 transition-colors" aria-label="Toggle menu">
+                <svg id="menu-icon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                </svg>
+                <svg id="close-icon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <div class="flex min-h-screen pt-14 md:pt-0">
         <!-- Sidebar Navigation -->
-        <aside class="w-64 bg-gradient-to-b from-primary-700 to-primary-900 text-white shadow-2xl fixed h-full">
-            <div class="p-6">
+        <aside id="sidebar" class="fixed inset-y-0 left-0 w-64 bg-gradient-to-b from-primary-700 to-primary-900 text-white shadow-2xl transform -translate-x-full md:translate-x-0 md:static md:h-screen transition-transform duration-300 ease-in-out z-30">
+            <div class="p-6 h-full flex flex-col">
                 <div class="flex items-center space-x-3 mb-8">
                     <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg">
                         <span class="text-2xl">🍳</span>
                     </div>
                     <div>
                         <h1 class="text-lg font-bold leading-tight">Kitchen Companion</h1>
-                        <p class="text-xs text-primary-200">Your Digital Cookbook</p>
+                        <p class="text-xs text-primary-200 hidden md:block">Your Digital Cookbook</p>
                     </div>
                 </div>
                 
-                <nav class="space-y-2">
+                <nav class="space-y-2 flex-1">
                     <a href="/" class="flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 {% if request.path == '/' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
@@ -79,24 +101,63 @@
                         <span>Features</span>
                     </a>
                 </nav>
-            </div>
-            
-            <div class="absolute bottom-0 left-0 right-0 p-6">
-                <div class="bg-white/10 rounded-xl p-4">
-                    <p class="text-sm text-primary-100 mb-1">API Status</p>
-                    <div class="flex items-center space-x-2">
-                        <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                        <span class="text-sm font-medium">Online</span>
+                
+                <div class="mt-auto pt-4">
+                    <div class="bg-white/10 rounded-xl p-4">
+                        <p class="text-sm text-primary-100 mb-1">API Status</p>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                            <span class="text-sm font-medium">Online</span>
+                        </div>
                     </div>
                 </div>
             </div>
         </aside>
         
+        <!-- Overlay for mobile -->
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-20 hidden md:hidden"></div>
+        
         <!-- Main Content Area -->
-        <main class="flex-1 ml-64">
+        <main class="flex-1 md:ml-0 w-full">
             {% block content %}{% endblock %}
         </main>
     </div>
+
+    <script>
+        // Mobile menu toggle
+        const menuBtn = document.getElementById('mobile-menu-btn');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        const menuIcon = document.getElementById('menu-icon');
+        const closeIcon = document.getElementById('close-icon');
+        
+        function toggleMenu() {
+            const isOpen = !sidebar.classList.contains('-translate-x-full');
+            if (isOpen) {
+                sidebar.classList.add('-translate-x-full');
+                overlay.classList.add('hidden');
+                menuIcon.classList.remove('hidden');
+                closeIcon.classList.add('hidden');
+            } else {
+                sidebar.classList.remove('-translate-x-full');
+                overlay.classList.remove('hidden');
+                menuIcon.classList.add('hidden');
+                closeIcon.classList.remove('hidden');
+            }
+        }
+        
+        menuBtn.addEventListener('click', toggleMenu);
+        overlay.addEventListener('click', toggleMenu);
+        
+        // Close menu when clicking a link (mobile)
+        sidebar.querySelectorAll('a').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth < 768) {
+                    toggleMenu();
+                }
+            });
+        });
+    </script>
     
     {% block extra_js %}{% endblock %}
 </body>

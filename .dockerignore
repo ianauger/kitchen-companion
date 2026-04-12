@@ -1,0 +1,58 @@
+# ============================================================================
+# Kitchen Companion - Docker Ignore
+# ============================================================================
+
+# Python artefacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Database & uploads (kept via volumes, not baked into image)
+instance/*.db
+static/uploads/recipes/*
+!static/uploads/recipes/.gitkeep
+
+# Git
+.git/
+.gitignore
+
+# Migrations compiled files
+migrations/versions/*.pyc
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Docker
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+
+# Environment files (pass via --env-file or docker-compose env)
+.env
+.env.*
+
+# Documentation & misc
+*.md
+!README.md
+docs/
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
