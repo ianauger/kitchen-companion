@@ -1,0 +1,324 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ 'Edit Recipe' if recipe else 'Create Recipe' }} - Kitchen Companion{% endblock %}
+
+{% block content %}
+<div class="p-4 md:p-8 max-w-4xl mx-auto">
+    <!-- Back Button -->
+    <a href="{{ url_for('main.get_recipe_detail', recipe_id=recipe.id) if recipe else '/' }}" class="inline-flex items-center space-x-2 text-gray-500 hover:text-primary-600 transition-colors mb-6 group">
+        <svg class="w-4 h-4 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+        </svg>
+        <span>{{ 'Back to Recipe' if recipe else 'Back to Home' }}</span>
+    </a>
+
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900">{{ 'Edit Recipe' if recipe else 'Create New Recipe' }}</h1>
+        <p class="text-gray-600 mt-2">{{ 'Update your recipe details below.' if recipe else 'Fill in the details below to add a new recipe to your collection.' }}</p>
+    </div>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="mb-6 p-4 rounded-xl {% if category == 'error' %}bg-red-50 text-red-700 border border-red-200{% else %}bg-green-50 text-green-700 border border-green-200{% endif %}">
+                    <div class="flex items-center space-x-2">
+                        {% if category == 'error' %}
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        {% else %}
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                        {% endif %}
+                        <span>{{ message }}</span>
+                    </div>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Form -->
+    <form action="{{ url_for('main.update_recipe_submit', recipe_id=recipe.id) if recipe else url_for('main.create_recipe_submit') }}" 
+          method="POST" 
+          enctype="multipart/form-data" 
+          class="bg-white rounded-3xl shadow-xl overflow-hidden">
+        
+        <!-- Image Section -->
+        <div class="bg-gradient-to-br from-gray-100 to-gray-200 p-6 md:p-8">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Recipe Image</h2>
+            
+            <!-- Current Image Preview (Edit mode) -->
+            {% if recipe and (recipe.image_path or recipe.image_url) %}
+                <div class="mb-4">
+                    <p class="text-sm text-gray-600 mb-2">Current Image:</p>
+                    <div class="relative w-full max-w-md h-48 rounded-xl overflow-hidden shadow-md">
+                        {% if recipe.image_path %}
+                            <img src="{{ url_for('static', filename=recipe.image_path) }}" alt="{{ recipe.title }}" class="w-full h-full object-cover" id="current-image">
+                        {% elif recipe.image_url %}
+                            <img src="{{ recipe.image_url }}" alt="{{ recipe.title }}" class="w-full h-full object-cover" id="current-image">
+                        {% endif %}
+                        <button type="button" onclick="clearImage()" class="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg" title="Remove image">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <input type="hidden" name="clear_image" id="clear_image" value="">
+            {% endif %}
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- File Upload -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Upload Image</label>
+                    <div class="relative">
+                        <input type="file" name="image_file" id="image_file" accept="image/*"
+                               class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                               onchange="previewImage(this)">
+                        <div class="border-2 border-dashed border-gray-400 rounded-xl p-6 text-center hover:border-primary-500 hover:bg-primary-50 transition-colors">
+                            <svg class="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            <p class="text-sm text-gray-600">Click to upload an image</p>
+                            <p class="text-xs text-gray-400 mt-1">JPG, PNG, GIF, WebP supported</p>
+                        </div>
+                    </div>
+                    <!-- Image Preview -->
+                    <div id="image-preview-container" class="hidden mt-4">
+                        <div class="relative w-full max-w-sm h-32 rounded-lg overflow-hidden shadow-md">
+                            <img id="image-preview" src="" alt="Preview" class="w-full h-full object-cover">
+                            <button type="button" onclick="removeImagePreview()" class="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- OR Image URL -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Or Image URL</label>
+                    <input type="url" name="image_url" id="image_url"
+                           value="{{ recipe.image_url if recipe and recipe.image_url else '' }}"
+                           placeholder="https://example.com/image.jpg"
+                           class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors">
+                    <p class="text-xs text-gray-500 mt-2">Provide a URL to download the image from</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Basic Info -->
+        <div class="p-6 md:p-8 border-b border-gray-100">
+            <h2 class="text-lg font-semibold text-gray-800 mb-6">Basic Information</h2>
+            
+            <div class="space-y-6">
+                <!-- Title -->
+                <div>
+                    <label for="title" class="block text-sm font-medium text-gray-700 mb-2">
+                        Recipe Title <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" name="title" id="title" required
+                           value="{{ recipe.title if recipe else '' }}"
+                           placeholder="e.g., Spaghetti Carbonara"
+                           class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-lg">
+                </div>
+                
+                <!-- Difficulty & Stats Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <label for="difficulty" class="block text-sm font-medium text-gray-700 mb-2">Difficulty</label>
+                        <select name="difficulty" id="difficulty"
+                                class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors">
+                            <option value="easy" {{ 'selected' if recipe and recipe.difficulty == 'easy' else '' }}>Easy</option>
+                            <option value="medium" {{ 'selected' if not recipe or recipe.difficulty == 'medium' else '' }}>Medium</option>
+                            <option value="hard" {{ 'selected' if recipe and recipe.difficulty == 'hard' else '' }}>Hard</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label for="prep_time" class="block text-sm font-medium text-gray-700 mb-2">Prep Time (min)</label>
+                        <input type="number" name="prep_time" id="prep_time" min="0"
+                               value="{{ recipe.prep_time if recipe and recipe.prep_time else '' }}"
+                               placeholder="15"
+                               class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors">
+                    </div>
+                    
+                    <div>
+                        <label for="cooking_time" class="block text-sm font-medium text-gray-700 mb-2">Cook Time (min)</label>
+                        <input type="number" name="cooking_time" id="cooking_time" min="0"
+                               value="{{ recipe.cooking_time if recipe and recipe.cooking_time else '' }}"
+                               placeholder="30"
+                               class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors">
+                    </div>
+                    
+                    <div>
+                        <label for="servings" class="block text-sm font-medium text-gray-700 mb-2">Servings</label>
+                        <input type="number" name="servings" id="servings" min="1"
+                               value="{{ recipe.servings if recipe and recipe.servings else '' }}"
+                               placeholder="4"
+                               class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors">
+                    </div>
+                </div>
+                
+                <!-- Source URL -->
+                <div>
+                    <label for="source_url" class="block text-sm font-medium text-gray-700 mb-2">Source URL</label>
+                    <input type="url" name="source_url" id="source_url"
+                           value="{{ recipe.source_url if recipe and recipe.source_url else '' }}"
+                           placeholder="https://original-recipe-source.com"
+                           class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors">
+                    <p class="text-xs text-gray-500 mt-1">Optional: Link to the original recipe source</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tags -->
+        <div class="p-6 md:p-8 border-b border-gray-100">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Tags</h2>
+            <div>
+                <label for="tags" class="block text-sm font-medium text-gray-700 mb-2">Tags (comma-separated)</label>
+                <input type="text" name="tags" id="tags"
+                       value="{{ recipe_tags_str if recipe else '' }}"
+                       placeholder="e.g., Italian, Pasta, Quick, Dinner"
+                       class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors">
+                <p class="text-xs text-gray-500 mt-2">Enter tags separated by commas. They'll be created if they don't exist.</p>
+                
+                <!-- Tag Suggestions -->
+                {% if tags_by_type %}
+                    <div class="mt-4">
+                        <p class="text-sm font-medium text-gray-600 mb-2">Available tags (click to add):</p>
+                        <div class="flex flex-wrap gap-2">
+                            {% for tag_type, tags in tags_by_type.items() %}
+                                {% for tag in tags %}
+                                    {% set tag_border_color = {'cuisine': '#ddd6fe', 'protein': '#a7f3d0', 'spice_level': '#fecaca', 'ingredient': '#fde68a', 'custom': '#e5e7eb'}.get(tag_type, '#e5e7eb') %}
+                                    {% set tag_text_color = {'cuisine': '#7c3aed', 'protein': '#059669', 'spice_level': '#dc2626', 'ingredient': '#d97706', 'custom': '#6b7280'}.get(tag_type, '#6b7280') %}
+                                    <button type="button" onclick="addTag('{{ tag.name }}')" 
+                                            class="px-3 py-1 text-sm rounded-full border hover:bg-primary-50 hover:border-primary-300 transition-colors"
+                                            style="border-color: {{ tag_border_color }}; color: {{ tag_text_color }};">
+                                        {{ tag.name }}
+                                    </button>
+                                {% endfor %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Ingredients -->
+        <div class="p-6 md:p-8 border-b border-gray-100">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Ingredients</h2>
+            <div>
+                <label for="ingredients" class="block text-sm font-medium text-gray-700 mb-2">Ingredients List</label>
+                <textarea name="ingredients" id="ingredients" rows="6"
+                          placeholder="- 1 lb spaghetti&#10;- 4 oz pancetta, diced&#10;- 4 egg yolks&#10;- 1 cup Parmesan cheese, grated"
+                          class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors whitespace-pre-wrap">{{ recipe.ingredients if recipe and recipe.ingredients else '' }}</textarea>
+                <p class="text-xs text-gray-500 mt-2">Enter each ingredient on a new line or use any format you prefer</p>
+            </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="p-6 md:p-8">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Instructions</h2>
+            <div>
+                <label for="instructions" class="block text-sm font-medium text-gray-700 mb-2">
+                    Cooking Instructions <span class="text-red-500">*</span>
+                </label>
+                <textarea name="instructions" id="instructions" rows="10" required
+                          placeholder="1. Boil water in a large pot and cook spaghetti according to package directions...&#10;&#10;2. While pasta cooks, fry pancetta in a large skillet..."
+                          class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors whitespace-pre-wrap">{{ recipe.instructions if recipe else '' }}</textarea>
+                <p class="text-xs text-gray-500 mt-2">Provide step-by-step instructions for preparing the recipe</p>
+            </div>
+        </div>
+
+        <!-- Submit Button -->
+        <div class="bg-gray-50 p-6 md:p-8">
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div class="flex items-center text-sm text-gray-500 order-2 sm:order-1">
+                    <span class="text-red-500">*</span> Required fields
+                </div>
+                <div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto order-1 sm:order-2">
+                    <a href="{{ url_for('main.get_recipe_detail', recipe_id=recipe.id) if recipe else '/' }}" 
+                       class="px-6 py-3 text-center text-gray-600 font-medium rounded-xl hover:bg-gray-200 transition-colors border border-gray-300">
+                        Cancel
+                    </a>
+                    <button type="submit" 
+                            class="px-8 py-3 bg-primary-600 text-white font-bold rounded-xl hover:bg-primary-700 transition-colors shadow-lg hover:shadow-xl">
+                        {{ 'Update Recipe' if recipe else 'Create Recipe' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Image preview functionality
+    function previewImage(input) {
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('image-preview').src = e.target.result;
+                document.getElementById('image-preview-container').classList.remove('hidden');
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+    
+    function removeImagePreview() {
+        document.getElementById('image_file').value = '';
+        document.getElementById('image-preview-container').classList.add('hidden');
+        document.getElementById('image-preview').src = '';
+    }
+    
+    // Clear image in edit mode
+    function clearImage() {
+        document.getElementById('clear_image').value = '1';
+        document.getElementById('current-image').parentElement.remove();
+        // Remove the input completely so it doesn't get submitted
+        const clearInput = document.getElementById('clear_image');
+        clearInput.remove();
+    }
+    
+    // Tag functionality
+    function addTag(tagName) {
+        const tagsInput = document.getElementById('tags');
+        const currentTags = tagsInput.value.split(',').map(t => t.trim()).filter(t => t);
+        
+        // Check if tag already exists
+        if (!currentTags.includes(tagName)) {
+            if (currentTags.length > 0) {
+                tagsInput.value = currentTags.join(', ') + ', ' + tagName;
+            } else {
+                tagsInput.value = tagName;
+            }
+        }
+    }
+    
+    // Form validation
+    document.querySelector('form').addEventListener('submit', function(e) {
+        const title = document.getElementById('title').value.trim();
+        const instructions = document.getElementById('instructions').value.trim();
+        
+        if (!title) {
+            e.preventDefault();
+            alert('Please enter a recipe title');
+            document.getElementById('title').focus();
+            return false;
+        }
+        
+        if (!instructions) {
+            e.preventDefault();
+            alert('Please enter cooking instructions');
+            document.getElementById('instructions').focus();
+            return false;
+        }
+    });
+</script>
+{% endblock %}

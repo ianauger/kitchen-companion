@@ -154,7 +154,8 @@
         try {
             const response = await fetch('/api/recipes');
             const data = await response.json();
-            allRecipes = data;
+            // Handle paginated response: the array of recipes is in data.recipes
+            allRecipes = data.recipes || [];
             filterAndDisplay();
         } catch (error) {
             console.error('Error fetching recipes:', error);

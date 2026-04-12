@@ -22,6 +22,13 @@ def client(app):
     return app.test_client()
 
 @pytest.fixture
+def db_session(app):
+    """Database session fixture for tests that need database access."""
+    with app.app_context():
+        yield db.session
+        db.session.rollback()
+
+@pytest.fixture
 def sample_recipe(app):
     with app.app_context():
         recipe = Recipe(

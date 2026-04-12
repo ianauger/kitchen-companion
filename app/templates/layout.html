@@ -87,6 +87,13 @@
                         <span>Search</span>
                     </a>
                     
+                    <a href="{{ url_for('main.create_recipe_form') }}" class="flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 {% if request.path == '/recipes/new' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                        <span>Create Recipe</span>
+                    </a>
+                    
                     <a href="/api-docs" class="flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 {% if request.path == '/api-docs' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>

@@ -22,12 +22,39 @@
             {% else %}
             <div class="w-full h-full bg-gray-200 flex items-center justify-center text-6xl">🍽️</div>
             {% endif %}
+            
+            <!-- Edit Recipe Button -->
+            <a href="{{ url_for('main.edit_recipe_form', recipe_id=recipe.id) }}" 
+               class="absolute top-4 right-4 px-4 py-2 bg-white/90 backdrop-blur text-gray-800 font-medium rounded-xl hover:bg-white transition-colors shadow-lg flex items-center space-x-2 z-10">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                </svg>
+                <span>Edit Recipe</span>
+            </a>
+            
             <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4 md:p-8 text-white">
                 <h1 class="text-2xl md:text-4xl font-bold mb-2">{{ recipe.title }}</h1>
-                <div class="flex flex-wrap gap-3">
-                    {% for tag in recipe.tags %}
-                    <span class="px-3 py-1 bg-white/20 backdrop-blur rounded-full text-sm font-medium">{{ tag.name }}</span>
-                    {% endfor %}
+                <div class="flex flex-wrap items-center gap-3">
+                    <div id="tags-container" class="flex flex-wrap gap-3">
+                        {% for tag in recipe.tags %}
+                        <span class="px-3 py-1 bg-white/20 backdrop-blur rounded-full text-sm font-medium">{{ tag.name }}</span>
+                        {% endfor %}
+                    </div>
+                    
+                    <!-- Quick Add Tag -->
+                    <form id="quick-add-tag-form" class="flex items-center gap-2 ml-2">
+                        <input type="text" id="quick-tag-input" 
+                            class="w-24 px-2 py-1 rounded-full bg-white/10 border border-white/30 text-white text-xs placeholder-white/50 focus:outline-none focus:ring-1 focus:ring-white/50"
+                            placeholder="Add tag..."
+                            maxlength="{{ 100 }}">
+                        <button type="submit" 
+                            class="p-1 bg-white/20 hover:bg-white/40 rounded-full transition-colors" 
+                            title="Add Tag">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                            </svg>
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
@@ -333,6 +360,49 @@
     // Close modal on backdrop click
     document.getElementById('edit-modal').addEventListener('click', function(e) {
         if (e.target === this) closeEditModal();
+    });
+
+    // Quick Add Tag
+    document.getElementById('quick-add-tag-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const input = document.getElementById('quick-tag-input');
+        const tagName = input.value.trim();
+        if (!tagName) return;
+
+        const submitButton = this.querySelector('button[type="submit"]');
+        const originalContent = submitButton.innerHTML;
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
+
+        try {
+            const response = await fetch(`/api/recipes/${recipeId}/tags`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tag: tagName })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to add tag');
+            }
+
+            const tag = await response.json();
+            
+            // Dynamically add to UI
+            const container = document.getElementById('tags-container');
+            const tagSpan = document.createElement('span');
+            tagSpan.className = 'px-3 py-1 bg-white/20 backdrop-blur rounded-full text-sm font-medium';
+            tagSpan.textContent = tag.name;
+            container.appendChild(tagSpan);
+
+            input.value = '';
+        } catch (error) {
+            console.error('Error adding tag:', error);
+            alert(error.message);
+        } finally {
+            submitButton.innerHTML = originalContent;
+            submitButton.disabled = false;
+        }
     });
 
     // Load notes when page loads

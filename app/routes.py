@@ -1,13 +1,16 @@
 """Route handlers for Kitchen Companion application."""
-from flask import Blueprint, request, jsonify, render_template
+from flask import Blueprint, request, jsonify, render_template, redirect, url_for, flash
+from werkzeug.utils import secure_filename
 from app import db, limiter
 from app.models import Recipe, Tag, Note
-from app.image_utils import download_image, delete_image, validate_url
+from app.image_utils import download_image, delete_image, validate_url, get_upload_dir
 from config import (
     MAX_NOTE_LENGTH, MAX_TAG_NAME_LENGTH,
     DEFAULT_PER_PAGE, MAX_PER_PAGE
 )
 from sqlalchemy.orm import joinedload
+import os
+from datetime import datetime
 
 # Blueprint for main pages
 main_bp = Blueprint('main', __name__)
@@ -64,6 +67,270 @@ def api_docs():
 def features():
     """Render the features page."""
     return render_template('features.html')
+
+
+# ============================================================================
+# Recipe Form Routes (Create & Edit)
+# ============================================================================
+
+@main_bp.route('/recipes/new', methods=['GET'])
+def create_recipe_form():
+    """Render the form for creating a new recipe."""
+    # Get all tags grouped by type for the tag selector
+    tags = Tag.query.all()
+    tags_by_type = {}
+    for tag in tags:
+        tags_by_type.setdefault(tag.tag_type, []).append(tag)
+    return render_template('recipe_form.html', tags_by_type=tags_by_type, recipe=None)
+
+
+@main_bp.route('/recipes/<int:recipe_id>/edit', methods=['GET'])
+def edit_recipe_form(recipe_id):
+    """Render the form for editing an existing recipe."""
+    recipe = Recipe.query.options(
+        joinedload(Recipe.tags)
+    ).get_or_404(recipe_id)
+    
+    # Get all tags grouped by type for the tag selector
+    tags = Tag.query.all()
+    tags_by_type = {}
+    for tag in tags:
+        tags_by_type.setdefault(tag.tag_type, []).append(tag)
+    
+    # Get current recipe tags as comma-separated string
+    recipe_tags_str = ', '.join([tag.name for tag in recipe.tags])
+    
+    return render_template('recipe_form.html', 
+                          tags_by_type=tags_by_type, 
+                          recipe=recipe,
+                          recipe_tags_str=recipe_tags_str)
+
+
+@main_bp.route('/recipes', methods=['POST'])
+@limiter.limit("10 per minute")
+def create_recipe_submit():
+    """Handle form submission for creating a new recipe."""
+    from flask import current_app
+    
+    # Validate required fields
+    title = request.form.get('title', '').strip()
+    instructions = request.form.get('instructions', '').strip()
+    
+    if not title:
+        flash('Title is required', 'error')
+        return redirect(url_for('main.create_recipe_form'))
+    if not instructions:
+        flash('Instructions are required', 'error')
+        return redirect(url_for('main.create_recipe_form'))
+    
+    # Create recipe
+    recipe = Recipe(
+        title=title,
+        instructions=instructions,
+        ingredients=request.form.get('ingredients', '').strip(),
+        source_url=request.form.get('source_url', '').strip() or None,
+        cooking_time=request.form.get('cooking_time', type=int),
+        prep_time=request.form.get('prep_time', type=int),
+        servings=request.form.get('servings', type=int),
+        difficulty=request.form.get('difficulty', 'medium')
+    )
+    
+    try:
+        db.session.add(recipe)
+        db.session.flush()  # Get the recipe ID
+        
+        # Handle tags (comma-separated values)
+        tags_input = request.form.get('tags', '').strip()
+        if tags_input:
+            tag_names = [name.strip() for name in tags_input.split(',') if name.strip()]
+            for tag_name in tag_names:
+                if tag_name and len(tag_name) <= MAX_TAG_NAME_LENGTH:
+                    tag, _ = Tag.get_or_create(name=tag_name, tag_type='custom')
+                    recipe.tags.append(tag)
+        
+        # Handle image upload from file
+        if 'image_file' in request.files:
+            file = request.files['image_file']
+            if file and file.filename:
+                relative_path, error = save_uploaded_image(file, recipe.id)
+                if relative_path:
+                    recipe.image_path = relative_path
+                elif error:
+                    current_app.logger.warning(f'Image upload failed: {error}')
+        
+        # Handle image URL if provided
+        if not recipe.image_path:
+            image_url = request.form.get('image_url', '').strip()
+            if image_url:
+                is_valid, error_msg = validate_url(image_url)
+                if is_valid:
+                    relative_path, _ = download_image(image_url, recipe_id=recipe.id)
+                    if relative_path:
+                        recipe.image_path = relative_path
+                        recipe.image_url = image_url
+                else:
+                    current_app.logger.warning(f'Invalid image URL: {error_msg}')
+        
+        db.session.commit()
+        flash('Recipe created successfully!', 'success')
+        return redirect(url_for('main.get_recipe_detail', recipe_id=recipe.id))
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Failed to create recipe: {e}')
+        flash('Failed to create recipe. Please try again.', 'error')
+        return redirect(url_for('main.create_recipe_form'))
+
+
+@main_bp.route('/recipes/<int:recipe_id>', methods=['POST'])
+@limiter.limit("10 per minute")
+def update_recipe_submit(recipe_id):
+    """Handle form submission for updating an existing recipe."""
+    from flask import current_app
+    
+    recipe = Recipe.query.get_or_404(recipe_id)
+    
+    # Validate required fields
+    title = request.form.get('title', '').strip()
+    instructions = request.form.get('instructions', '').strip()
+    
+    if not title:
+        flash('Title is required', 'error')
+        return redirect(url_for('main.edit_recipe_form', recipe_id=recipe_id))
+    if not instructions:
+        flash('Instructions is required', 'error')
+        return redirect(url_for('main.edit_recipe_form', recipe_id=recipe_id))
+    
+    # Update fields only if provided in the request
+    title = request.form.get('title', '').strip()
+    if title:
+        recipe.title = title
+    
+    instructions = request.form.get('instructions', '').strip()
+    if instructions:
+        recipe.instructions = instructions
+    
+    ingredients = request.form.get('ingredients', '').strip()
+    if ingredients:
+        recipe.ingredients = ingredients
+        
+    source_url = request.form.get('source_url', '').strip()
+    if source_url:
+        recipe.source_url = source_url
+    elif request.form.get('clear_source'):
+        recipe.source_url = None
+
+    # For numeric fields, check if they are present and not empty strings
+    cooking_time = request.form.get('cooking_time')
+    if cooking_time is not None and cooking_time != '':
+        recipe.cooking_time = int(cooking_time)
+        
+    prep_time = request.form.get('prep_time')
+    if prep_time is not None and prep_time != '':
+        recipe.prep_time = int(prep_time)
+        
+    servings = request.form.get('servings')
+    if servings is not None and servings != '':
+        recipe.servings = int(servings)
+        
+    difficulty = request.form.get('difficulty')
+    if difficulty:
+        recipe.difficulty = difficulty
+        
+    recipe.updated_at = datetime.utcnow()
+    
+    try:
+        # Handle tags (comma-separated values)
+        tags_input = request.form.get('tags', '').strip()
+        recipe.tags = []  # Clear existing tags
+        if tags_input:
+            tag_names = [name.strip() for name in tags_input.split(',') if name.strip()]
+            for tag_name in tag_names:
+                if tag_name and len(tag_name) <= MAX_TAG_NAME_LENGTH:
+                    tag, _ = Tag.get_or_create(name=tag_name, tag_type='custom')
+                    recipe.tags.append(tag)
+        
+        # Handle image upload from file
+        if 'image_file' in request.files:
+            file = request.files['image_file']
+            if file and file.filename:
+                # Delete old image if exists
+                if recipe.image_path:
+                    delete_image(recipe.image_path)
+                relative_path, error = save_uploaded_image(file, recipe.id)
+                if relative_path:
+                    recipe.image_path = relative_path
+                elif error:
+                    current_app.logger.warning(f'Image upload failed: {error}')
+        
+        # Handle image URL if provided and file not uploaded
+        elif not recipe.image_path or request.form.get('clear_image'):
+            image_url = request.form.get('image_url', '').strip()
+            if image_url:
+                is_valid, error_msg = validate_url(image_url)
+                if is_valid:
+                    # Delete old image if exists
+                    if recipe.image_path:
+                        delete_image(recipe.image_path)
+                    relative_path, _ = download_image(image_url, recipe_id=recipe.id)
+                    if relative_path:
+                        recipe.image_path = relative_path
+                        recipe.image_url = image_url
+                else:
+                    current_app.logger.warning(f'Invalid image URL: {error_msg}')
+        
+        # Handle image clearing
+        if request.form.get('clear_image') and recipe.image_path:
+            delete_image(recipe.image_path)
+            recipe.image_path = None
+            recipe.image_url = None
+        
+        db.session.commit()
+        flash('Recipe updated successfully!', 'success')
+        return redirect(url_for('main.get_recipe_detail', recipe_id=recipe_id))
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Failed to update recipe: {e}')
+        flash('Failed to update recipe. Please try again.', 'error')
+        return redirect(url_for('main.edit_recipe_form', recipe_id=recipe_id))
+
+
+def save_uploaded_image(file, recipe_id):
+    """Save an uploaded image file.
+    
+    Args:
+        file: The uploaded file object
+        recipe_id: The recipe ID for filename
+        
+    Returns:
+        tuple: (relative_path, error_message) - relative_path is None on failure
+    """
+    from flask import current_app
+    import uuid
+    from pathlib import Path
+    
+    allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+    
+    if not file.filename:
+        return None, "No file selected"
+    
+    # Get file extension
+    ext = Path(file.filename).suffix.lower()
+    if ext not in allowed_extensions:
+        return None, f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
+    
+    # Generate filename
+    filename = f'recipe_{recipe_id}_{uuid.uuid4().hex[:8]}{ext}'
+    upload_dir = get_upload_dir()
+    absolute_path = upload_dir / filename
+    relative_path = f'uploads/recipes/{filename}'
+    
+    try:
+        file.save(str(absolute_path))
+        return relative_path, None
+    except Exception as e:
+        return None, str(e)
 
 
 # ============================================================================
@@ -519,11 +786,46 @@ def delete_note(note_id):
     return '', 204
 
 
-@api_bp.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint.
+@api_bp.route('/recipes/<int:recipe_id>/tags', methods=['POST'])
+@limiter.limit("20 per minute")
+def add_recipe_tag(recipe_id):
+    """Add a tag to a recipe.
+    
+    Args:
+        recipe_id: Recipe ID
+    
+    Request Body (JSON):
+        tag: (required) Tag name
     
     Returns:
-        JSON status object
+        JSON object of the added tag with 201 status
     """
-    return jsonify({'status': 'healthy'})
+    recipe = Recipe.query.get_or_404(recipe_id)
+    data = request.get_json()
+    
+    if not data or 'tag' not in data:
+        return jsonify({'error': 'Tag name is required'}), 400
+    
+    tag_name = data['tag'].strip()
+    if not tag_name:
+        return jsonify({'error': 'Tag name cannot be empty'}), 400
+    
+    if len(tag_name) > MAX_TAG_NAME_LENGTH:
+        return jsonify({'error': f'Tag name exceeds maximum length of {MAX_TAG_NAME_LENGTH} characters'}), 400
+    
+    try:
+        # Use the model's get_or_create method (normalizes and checks for existence)
+        tag, created = Tag.get_or_create(name=tag_name, tag_type='custom')
+        
+        # Avoid duplicates for the same recipe
+        if tag not in recipe.tags:
+            recipe.tags.append(tag)
+            db.session.commit()
+        
+        return jsonify(tag.to_dict()), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Failed to add tag to recipe {recipe_id}: {e}')
+        return jsonify({'error': 'Failed to add tag'}), 500
+
