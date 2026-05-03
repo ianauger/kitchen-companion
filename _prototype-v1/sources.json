@@ -1,0 +1,452 @@
+{
+  "registry_version": "1.0",
+  "created": "2026-04-11",
+  "constraints": {
+    "dietary_exclusions": ["tofu", "seafood"],
+    "serving_size": "4-5 servings"
+  },
+  "sources": [
+    {
+      "name": "The Kitchn",
+      "url": "https://www.thekitchn.com/",
+      "specialty": "General Culinary & Home Cooking",
+      "description": "Wide range of home cooking recipes with a focus on practical tips and kitchen lifestyle",
+      "search_query_template": "site:thekitchn.com {{protein}} recipe -tofu -seafood -fish -shrimp -salmon -tuna",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": true,
+        "provides_nutrition": "partial",
+        "step_by_step_photos": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "good",
+        "serving_size_4_5": "good",
+        "notes": "Generalist site; tofu and seafood present but easily filtered; diverse protein options"
+      },
+      "quality_score": 4,
+      "tags": ["General", "American", "Home Cooking", "Lifestyle"]
+    },
+    {
+      "name": "Spruce Eats",
+      "url": "https://www.thespruceeats.com/",
+      "specialty": "Accessible Home Cooking",
+      "description": "Huge variety of recipes from basic to complex with clear instructions for home cooks",
+      "search_query_template": "site:thespruceeats.com {{protein}} recipe -tofu -seafood -fish -shrimp -salmon",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": true,
+        "provides_nutrition": "partial",
+        "step_by_step_photos": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "good",
+        "serving_size_4_5": "excellent",
+        "notes": "Very broad range; tofu and seafood clearly labeled; excellent portion sizing"
+      },
+      "quality_score": 4,
+      "tags": ["General", "American", "Beginner-Friendly", "Comprehensive"]
+    },
+    {
+      "name": "Serious Eats",
+      "url": "https://www.seriouseats.com/",
+      "specialty": "Food Science & Technique",
+      "description": "Deep-dive culinary science, tested techniques, equipment reviews",
+      "search_query_template": "site:seriouseats.com {{protein}} recipe -tofu -seafood -fish -shrimp -salmon -tuna",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": false,
+        "provides_nutrition": "partial",
+        "step_by_step_photos": true,
+        "scientific_explanations": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "excellent",
+        "serving_size_4_5": "good",
+        "notes": "Meat-focused; seafood present but clearly labeled; servings adjustable"
+      },
+      "quality_score": 5,
+      "tags": ["Technique", "Science", "American", "Advanced"]
+    },
+    {
+      "name": "The Woks of Life",
+      "url": "https://thewoksoflife.com/",
+      "specialty": "Authentic Chinese Home Cooking",
+      "description": "Traditional Chinese recipes with cultural context and family stories",
+      "search_query_template": "site:thewoksoflife.com {{protein}} -tofu -seafood",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": false,
+        "provides_nutrition": false,
+        "step_by_step_photos": true,
+        "cultural_context": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "good",
+        "serving_size_4_5": "excellent",
+        "notes": "Some tofu recipes (clearly labeled); seafood used but meat dishes abundant; family-style servings"
+      },
+      "quality_score": 4,
+      "tags": ["Asian", "Chinese", "Authentic", "Family-Style"]
+    },
+    {
+      "name": "Just One Cookbook",
+      "url": "https://www.justonecookbook.com/",
+      "specialty": "Authentic Japanese Home Cooking",
+      "description": "Comprehensive Japanese recipes with video tutorials and ingredient guides",
+      "search_query_template": "site:justonecookbook.com {{protein}} -tofu -seafood",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": true,
+        "provides_nutrition": "partial",
+        "step_by_step_photos": true,
+        "video_tutorials": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "moderate",
+        "serving_size_4_5": "good",
+        "notes": "Seafood prominent in Japanese cuisine; many meat/poultry options available; tofu common but identifiable"
+      },
+      "quality_score": 5,
+      "tags": ["Asian", "Japanese", "Authentic", "Video Tutorials"]
+    },
+    {
+      "name": "Maangchi",
+      "url": "https://www.maangchi.com/",
+      "specialty": "Authentic Korean Home Cooking",
+      "description": "Korean recipes with video tutorials, cultural education, and community",
+      "search_query_template": "site:maangchi.com {{protein}} -tofu -seafood",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": true,
+        "provides_nutrition": false,
+        "step_by_step_photos": true,
+        "video_tutorials": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "moderate",
+        "serving_size_4_5": "excellent",
+        "notes": "Seafood common in Korean cuisine; many meat-based banchan and mains; tofu identifiable in ingredient lists"
+      },
+      "quality_score": 5,
+      "tags": ["Asian", "Korean", "Authentic", "Video Tutorials", "Community"]
+    },
+    {
+      "name": "Ministry of Curry",
+      "url": "https://ministryofcurry.com/",
+      "specialty": "Authentic Indian Regional Cuisine",
+      "description": "Regional Indian recipes by cookbook author Archana Mundhe with global influences",
+      "search_query_template": "site:ministryofcurry.com {{protein}} -tofu -seafood",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": false,
+        "provides_nutrition": "partial",
+        "step_by_step_photos": true,
+        "regional_context": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "excellent",
+        "serving_size_4_5": "excellent",
+        "notes": "Vegetarian-heavy but tofu rare; seafood regionally specific and labeled; meat curries abundant"
+      },
+      "quality_score": 4,
+      "tags": ["Asian", "Indian", "Authentic", "Regional", "Cookbook Author"]
+    },
+    {
+      "name": "Swasthi's Recipes",
+      "url": "https://www.indianhealthyrecipes.com/",
+      "specialty": "Authentic Indian Vegetarian & Non-Veg",
+      "description": "Comprehensive Indian recipe collection with restaurant-quality results",
+      "search_query_template": "site:indianhealthyrecipes.com {{protein}} -tofu -seafood",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": true,
+        "provides_nutrition": "partial",
+        "step_by_step_photos": true,
+        "tips_variations": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "excellent",
+        "serving_size_4_5": "excellent",
+        "notes": "Tofu rarely used; seafood clearly labeled; extensive meat/vegetarian options"
+      },
+      "quality_score": 5,
+      "tags": ["Asian", "Indian", "Authentic", "Vegetarian-Friendly", "Comprehensive"]
+    },
+    {
+      "name": "Cook with Manali",
+      "url": "https://www.cookwithmanali.com/",
+      "specialty": "Indian Vegetarian Home Cooking",
+      "description": "1000+ authentic Indian vegetarian recipes by cookbook author Manali Singh",
+      "search_query_template": "site:cookwithmanali.com {{protein}} -tofu -seafood -fish -shrimp",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": true,
+        "provides_nutrition": "partial",
+        "step_by_step_photos": true,
+        "cookbook_author": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "excellent",
+        "serving_size_4_5": "excellent",
+        "notes": "Primarily vegetarian; paneer common, tofu rare; no seafood; perfect for constraint fit"
+      },
+      "quality_score": 5,
+      "tags": ["Asian", "Indian", "Vegetarian", "Authentic", "Cookbook Author"]
+    },
+    {
+      "name": "The Mediterranean Dish",
+      "url": "https://www.themediterraneandish.com/",
+      "specialty": "Mediterranean Diet & Lifestyle",
+      "description": "Internet's #1 Mediterranean resource with seasonal, whole-food recipes",
+      "search_query_template": "site:themediterraneandish.com {{protein}} recipe -tofu -seafood -fish -shrimp -salmon -tuna",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": true,
+        "provides_nutrition": true,
+        "step_by_step_photos": true,
+        "meal_plans": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "moderate",
+        "serving_size_4_5": "excellent",
+        "notes": "Seafood common in Mediterranean diet but clearly labeled; many meat/poultry options; tofu rare"
+      },
+      "quality_score": 5,
+      "tags": ["Mediterranean", "Healthy", "Lifestyle", "Meal Planning"]
+    },
+    {
+      "name": "OliveTomato",
+      "url": "https://www.olivetomato.com/",
+      "specialty": "Evidence-Based Mediterranean Diet",
+      "description": "RDN-authored Mediterranean diet guidance with research-backed recipes",
+      "search_query_template": "site:olivetomato.com {{protein}} -tofu -seafood -fish -shrimp -salmon",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": false,
+        "provides_nutrition": true,
+        "step_by_step_photos": true,
+        "research_backed": true,
+        "dietitian_authored": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "moderate",
+        "serving_size_4_5": "good",
+        "notes": "Seafood emphasized for health benefits but optional; meat recipes available; tofu uncommon"
+      },
+      "quality_score": 4,
+      "tags": ["Mediterranean", "Health", "Nutrition", "RDN-Authored", "Research"]
+    },
+    {
+      "name": "Mexico in my Kitchen",
+      "url": "https://www.mexicoinmykitchen.com/",
+      "specialty": "Traditional Mexican Home Cooking",
+      "description": "Authentic Mexican recipes with regional history and step-by-step photos",
+      "search_query_template": "site:mexicoinmykitchen.com {{protein}} -tofu -seafood -fish -shrimp -mariscos",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": true,
+        "provides_nutrition": false,
+        "step_by_step_photos": true,
+        "regional_history": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "excellent",
+        "serving_size_4_5": "excellent",
+        "notes": "Tofu not traditional; seafood coastal but clearly regional; meat/poultry dominant"
+      },
+      "quality_score": 5,
+      "tags": ["Latin American", "Mexican", "Authentic", "Regional", "Traditional"]
+    },
+    {
+      "name": "Isabel Eats",
+      "url": "https://www.isabeleats.com/",
+      "specialty": "Authentic Mexican & Tex-Mex",
+      "description": "Traditional and Mexican-inspired recipes for home cooks",
+      "search_query_template": "site:isabeleats.com {{protein}} -tofu -seafood -fish -shrimp",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": true,
+        "provides_nutrition": "partial",
+        "step_by_step_photos": true,
+        "video_tutorials": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "excellent",
+        "serving_size_4_5": "excellent",
+        "notes": "Tofu not used; seafood optional; beef/chicken/pork focus"
+      },
+      "quality_score": 4,
+      "tags": ["Latin American", "Mexican", "Tex-Mex", "Video Tutorials"]
+    },
+    {
+      "name": "Mexican Please",
+      "url": "https://www.mexicanplease.com/",
+      "specialty": "Authentic Mexican Techniques & Recipes",
+      "description": "Deep-dive Mexican cooking techniques and traditional recipes",
+      "search_query_template": "site:mexicanplease.com {{protein}} -tofu -seafood -fish -shrimp -mariscos",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": false,
+        "provides_nutrition": false,
+        "step_by_step_photos": true,
+        "technique_focus": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "excellent",
+        "serving_size_4_5": "good",
+        "notes": "Traditional focus means no tofu; seafood regional; meat-centric"
+      },
+      "quality_score": 4,
+      "tags": ["Latin American", "Mexican", "Technique", "Authentic"]
+    },
+    {
+      "name": "Hot Thai Kitchen",
+      "url": "https://hot-thai-kitchen.com/",
+      "specialty": "Authentic Thai with Video Tutorials",
+      "description": "Thai recipes with step-by-step videos by cookbook author Pailin Chongchitnant",
+      "search_query_template": "site:hot-thai-kitchen.com {{protein}} -tofu -seafood",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": true,
+        "provides_nutrition": "partial",
+        "step_by_step_photos": true,
+        "video_tutorials": true,
+        "cookbook_author": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "moderate",
+        "serving_size_4_5": "good",
+        "notes": "Tofu common but identifiable; seafood prevalent but meat curries available; clearly labeled ingredients"
+      },
+      "quality_score": 5,
+      "tags": ["Asian", "Thai", "Authentic", "Video Tutorials", "Cookbook Author"]
+    },
+    {
+      "name": "World of Thai Food",
+      "url": "https://worldofthaifood.com/",
+      "specialty": "Traditional Thai Techniques & Balance",
+      "description": "Authentic Thai recipes focused on traditional technique and flavor balance",
+      "search_query_template": "site:worldofthaifood.com {{protein}} -tofu -seafood",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": false,
+        "provides_nutrition": false,
+        "step_by_step_photos": true,
+        "technique_focus": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "moderate",
+        "serving_size_4_5": "good",
+        "notes": "Tofu and seafood common; meat dishes available; ingredients clearly listed"
+      },
+      "quality_score": 4,
+      "tags": ["Asian", "Thai", "Authentic", "Technique", "Traditional"]
+    },
+    {
+      "name": "Maunika Gowardhan",
+      "url": "https://maunikagowardhan.co.uk/",
+      "specialty": "Authentic Indian Curries & Methods",
+      "description": "Traditional Indian cooking methods and curry recipes",
+      "search_query_template": "site:maunikagowardhan.co.uk {{protein}} -tofu -seafood",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": false,
+        "provides_nutrition": false,
+        "step_by_step_photos": true,
+        "cookbook_author": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "excellent",
+        "serving_size_4_5": "excellent",
+        "notes": "Traditional Indian focus; tofu uncommon; seafood regional and labeled"
+      },
+      "quality_score": 4,
+      "tags": ["Asian", "Indian", "Authentic", "Curry", "Cookbook Author"]
+    },
+    {
+      "name": "Homemade Always",
+      "url": "https://homemadealways.com/",
+      "specialty": "Mexican From-Scratch Cooking",
+      "description": "Authentic Mexican recipes with weekly videos and family traditions",
+      "search_query_template": "site:homemadealways.com {{protein}} -tofu -seafood -fish -shrimp -mariscos",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": false,
+        "provides_nutrition": false,
+        "step_by_step_photos": true,
+        "video_tutorials": true,
+        "weekly_content": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "excellent",
+        "serving_size_4_5": "excellent",
+        "notes": "Traditional Mexican; no tofu; seafood optional; family servings"
+      },
+      "quality_score": 4,
+      "tags": ["Latin American", "Mexican", "Video Tutorials", "Family", "Traditional"]
+    },
+    {
+      "name": "Sinfully Spicy",
+      "url": "https://sinfullyspicy.com/",
+      "specialty": "Indian Fusion & Traditional",
+      "description": "Indian recipes ranging from traditional to fusion with family favorites",
+      "search_query_template": "site:sinfullyspicy.com {{protein}} -tofu -seafood",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": false,
+        "provides_nutrition": "partial",
+        "step_by_step_photos": true,
+        "fusion_options": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "excellent",
+        "serving_size_4_5": "good",
+        "notes": "Tofu rare; seafood labeled; meat and vegetarian options abundant"
+      },
+      "quality_score": 4,
+      "tags": ["Asian", "Indian", "Fusion", "Traditional", "Family"]
+    },
+    {
+      "name": "Hungry in Thailand",
+      "url": "https://hungryinthailand.com/",
+      "specialty": "Family Thai Recipes",
+      "description": "Traditional family Thai recipes and personal creations",
+      "search_query_template": "site:hungryinthailand.com {{protein}} -tofu -seafood",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": false,
+        "provides_nutrition": false,
+        "step_by_step_photos": true,
+        "family_recipes": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "moderate",
+        "serving_size_4_5": "good",
+        "notes": "Family-style Thai; tofu and seafood common but identifiable; meat curries available"
+      },
+      "quality_score": 4,
+      "tags": ["Asian", "Thai", "Authentic", "Family Recipes"]
+    },
+    {
+      "name": "Muy Delish",
+      "url": "https://www.muydelish.com/",
+      "specialty": "Easy Authentic Mexican",
+      "description": "Accessible authentic Mexican recipes for everyday cooking",
+      "search_query_template": "site:muydelish.com {{protein}} -tofu -seafood -fish -shrimp -mariscos",
+      "data_quality": {
+        "provides_costs": false,
+        "provides_ratings": false,
+        "provides_nutrition": false,
+        "step_by_step_photos": true,
+        "beginner_friendly": true
+      },
+      "constraint_alignment": {
+        "no_tofu_seafood": "excellent",
+        "serving_size_4_5": "excellent",
+        "notes": "Traditional Mexican; no tofu; seafood optional; easy portion adjustment"
+      },
+      "quality_score": 4,
+      "tags": ["Latin American", "Mexican", "Beginner-Friendly", "Authentic"]
+    }
+  ]
+}

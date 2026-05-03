@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kitchen Companion</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="app-header">
+        <h1>🍳 Kitchen Companion</h1>
+        <p class="tagline">Base + Protein + Pivot = Delicious Meals</p>
+    </header>
+
+    <main class="container">
+        <!-- Recipe Selection View -->
+        <section id="recipe-selection" class="view active">
+            <h2>Choose Your Meal</h2>
+            
+            <!-- Filter Controls -->
+            <div class="filters">
+                <div class="filter-group">
+                    <label for="base-filter">Base:</label>
+                    <select id="base-filter">
+                        <option value="all">All Bases</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="protein-filter">Protein:</label>
+                    <select id="protein-filter">
+                        <option value="all">All Proteins</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="pivot-filter">Flavor:</label>
+                    <select id="pivot-filter">
+                        <option value="all">All Flavors</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Recipe Grid -->
+            <div id="recipe-grid" class="recipe-grid"></div>
+        </section>
+
+        <!-- Recipe Detail View -->
+        <section id="recipe-detail" class="view">
+            <button class="back-btn" onclick="showView('recipe-selection')">← Back to Recipes</button>
+            
+            <div class="recipe-header">
+                <h2 id="detail-title"></h2>
+                <div class="meal-modular-display">
+                    <div class="modular-item base">
+                        <span class="modular-label">BASE</span>
+                        <span id="detail-base" class="modular-value"></span>
+                    </div>
+                    <div class="modular-item protein">
+                        <span class="modular-label">PROTEIN</span>
+                        <span id="detail-protein" class="modular-value"></span>
+                    </div>
+                    <div class="modular-item pivot">
+                        <span class="modular-label">PIVOT</span>
+                        <span id="detail-pivot" class="modular-value"></span>
+                    </div>
+                </div>
+                <div class="meal-stats">
+                    <span class="stat">💰 $<span id="detail-cost"></span></span>
+                    <span class="stat">🔥 <span id="detail-calories"></span> cal</span>
+                    <span id="detail-rating-display" class="stat"></span>
+                </div>
+            </div>
+
+            <!-- Step-by-Step Cooking Mode -->
+            <div class="cooking-mode">
+                <h3>👨‍🍳 Cooking Steps</h3>
+                <div class="step-display">
+                    <div class="step-counter">
+                        <span id="current-step-num">1</span> / <span id="total-steps"></span>
+                    </div>
+                    <div id="current-step-text" class="step-text"></div>
+                </div>
+                <div class="step-navigation">
+                    <button id="prev-step-btn" class="nav-btn" onclick="previousStep()">← Previous</button>
+                    <button id="next-step-btn" class="nav-btn huge" onclick="nextStep()">NEXT STEP →</button>
+                </div>
+            </div>
+
+            <!-- Ingredients List -->
+            <div class="ingredients-section">
+                <h3>📋 Ingredients</h3>
+                <ul id="ingredients-list" class="ingredients-list"></ul>
+            </div>
+
+            <!-- Rate This Meal Section -->
+            <div class="rating-section">
+                <h3>⭐ Rate This Meal</h3>
+                <p class="rating-subtitle">Your feedback helps improve future meal picks!</p>
+                <div class="rating-row">
+                    <div class="rating-group">
+                        <span class="rating-label">Taste</span>
+                        <div class="star-rating" id="taste-stars" data-metric="taste">
+                            <span class="star" data-value="1">★</span>
+                            <span class="star" data-value="2">★</span>
+                            <span class="star" data-value="3">★</span>
+                            <span class="star" data-value="4">★</span>
+                            <span class="star" data-value="5">★</span>
+                        </div>
+                    </div>
+                    <div class="rating-group">
+                        <span class="rating-label">Satiety</span>
+                        <div class="star-rating" id="satiety-stars" data-metric="satiety">
+                            <span class="star" data-value="1">★</span>
+                            <span class="star" data-value="2">★</span>
+                            <span class="star" data-value="3">★</span>
+                            <span class="star" data-value="4">★</span>
+                            <span class="star" data-value="5">★</span>
+                        </div>
+                    </div>
+                </div>
+                <button class="save-rating-btn" id="save-rating-btn" onclick="saveRating()" disabled>Save Rating</button>
+                <p id="rating-saved-msg" class="rating-saved-msg" style="display:none;">✓ Rating saved!</p>
+            </div>
+        </section>
+
+        <!-- Shopping List View -->
+        <section id="shopping-list" class="view">
+            <button class="back-btn" onclick="showView('recipe-selection')">← Back to Recipes</button>
+            <h2>🛒 Shopping List</h2>
+            <p class="shopping-info">Select recipes for your week, then generate your aisle-aware shopping list!</p>
+            
+            <div class="week-planner">
+                <h3>Select Meals for the Week</h3>
+                <div id="week-selection" class="week-selection"></div>
+                <button class="generate-list-btn" onclick="generateShoppingList()">Generate Shopping List</button>
+            </div>
+
+            <div id="shopping-list-output" class="shopping-list-output">
+                <h3>Your Shopping List</h3>
+                <p class="shopping-meta" id="shopping-meta"></p>
+                <div id="shopping-items"></div>
+                <div class="shopping-actions">
+                    <button class="action-btn" onclick="copyShoppingList()">📋 Copy List</button>
+                    <button class="action-btn" onclick="printShoppingList()">🖨️ Print</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Master Prep View -->
+        <section id="master-prep" class="view">
+            <button class="back-btn" onclick="showView('recipe-selection')">← Back to Recipes</button>
+            <h2>🕒 Master Prep Mode</h2>
+            <p class="prep-info">Select recipes for your batch-cook session, then get an optimized prep workflow!</p>
+
+            <div class="prep-planner">
+                <h3>Select Recipes to Prep</h3>
+                <div id="prep-selection" class="week-selection"></div>
+                <button class="generate-list-btn" onclick="generatePrepWorkflow()">Generate Prep Workflow</button>
+            </div>
+
+            <div id="prep-output" class="prep-output" style="display:none;">
+                <div class="prep-header">
+                    <h3>📋 Your Master Prep Plan</h3>
+                    <p class="prep-summary" id="prep-summary"></p>
+                </div>
+                <div id="prep-stages"></div>
+                <div class="prep-actions">
+                    <button class="action-btn" onclick="copyPrepWorkflow()">📋 Copy Workflow</button>
+                    <button class="action-btn" onclick="printShoppingList()">🖨️ Print</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Ratings History View -->
+        <section id="ratings-history" class="view">
+            <button class="back-btn" onclick="showView('recipe-selection')">← Back to Recipes</button>
+            <h2>📊 Meal Ratings</h2>
+            <p class="ratings-info">Your taste and satiety scores help refine future picks.</p>
+
+            <div class="ratings-sort-controls">
+                <label for="ratings-sort">Sort by:</label>
+                <select id="ratings-sort" onchange="renderRatingsHistory()">
+                    <option value="recent">Most Recent</option>
+                    <option value="taste-high">Best Taste</option>
+                    <option value="satiety-high">Most Filling</option>
+                    <option value="taste-low">Lowest Taste</option>
+                    <option value="satiety-low">Least Filling</option>
+                </select>
+            </div>
+
+            <div id="ratings-list" class="ratings-list"></div>
+        </section>
+    </main>
+
+    <nav class="bottom-nav">
+        <button class="nav-item active" onclick="showView('recipe-selection')" data-view="recipe-selection">
+            <span class="nav-icon">🍽️</span>
+            <span class="nav-label">Recipes</span>
+        </button>
+        <button class="nav-item" onclick="showView('shopping-list')" data-view="shopping-list">
+            <span class="nav-icon">🛒</span>
+            <span class="nav-label">Shopping</span>
+        </button>
+        <button class="nav-item" onclick="showView('master-prep')" data-view="master-prep">
+            <span class="nav-icon">🕒</span>
+            <span class="nav-label">Prep</span>
+        </button>
+        <button class="nav-item" onclick="showView('ratings-history')" data-view="ratings-history">
+            <span class="nav-icon">📊</span>
+            <span class="nav-label">Ratings</span>
+        </button>
+    </nav>
+
+    <script src="script.js"></script>
+</body>
+</html>
