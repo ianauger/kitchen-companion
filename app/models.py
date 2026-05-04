@@ -228,3 +228,48 @@ class Note(db.Model):
     
     def __repr__(self):
         return f'<Note {self.id} for Recipe {self.recipe_id}>'
+
+
+class ShoppingItem(db.Model):
+    """Shopping list item model.
+    
+    Tracks items added from recipe ingredients or manually.
+    
+    Attributes:
+        id: Unique identifier
+        name: Item name (e.g., "2 cups flour")
+        recipe_id: Optional FK to the source recipe
+        purchased: Whether the item has been checked off
+        created_at: When the item was added
+        updated_at: Last update timestamp
+    """
+    __tablename__ = 'shopping_items'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(500), nullable=False)
+    recipe_id = db.Column(db.Integer, db.ForeignKey('recipes.id'), nullable=True)
+    purchased = db.Column(db.Boolean, default=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Optional relationship back to recipe for showing source
+    recipe = db.relationship(
+        'Recipe',
+        backref=db.backref('shopping_items', lazy='dynamic', cascade='all, delete-orphan'),
+        lazy='select'
+    )
+
+    def to_dict(self):
+        """Convert shopping item to dictionary representation."""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'recipe_id': self.recipe_id,
+            'recipe_title': self.recipe.title if self.recipe else None,
+            'purchased': self.purchased,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+    def __repr__(self):
+        return f'<ShoppingItem {self.name}>'

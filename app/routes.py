@@ -2,7 +2,7 @@
 from flask import Blueprint, request, jsonify, render_template, redirect, url_for, flash
 from werkzeug.utils import secure_filename
 from app import db, limiter
-from app.models import Recipe, Tag, Note
+from app.models import Recipe, Tag, Note, ShoppingItem
 from app.image_utils import download_image, delete_image, validate_url, get_upload_dir
 from config import (
     MAX_NOTE_LENGTH, MAX_TAG_NAME_LENGTH,
@@ -61,6 +61,16 @@ def search():
 def api_docs():
     """Render the API reference page."""
     return render_template('api_docs.html')
+
+
+@main_bp.route('/shopping-list')
+def shopping_list():
+    """Render the shopping list page."""
+    from sqlalchemy.orm import joinedload
+    items = ShoppingItem.query.options(
+        joinedload(ShoppingItem.recipe)
+    ).order_by(ShoppingItem.purchased.asc(), ShoppingItem.created_at.desc()).all()
+    return render_template('shopping_list.html', items=items)
 
 
 @main_bp.route('/features')
@@ -674,6 +684,93 @@ def get_random_recipes():
         joinedload(Recipe.notes)
     ).order_by(func.random()).limit(count).all()
     return jsonify([recipe.to_dict() for recipe in recipes])
+
+
+# ============================================================================
+# Shopping List API Routes
+# ============================================================================
+
+@api_bp.route('/shopping-items', methods=['GET'])
+def get_shopping_items():
+    """Get all shopping list items."""
+    from sqlalchemy.orm import joinedload
+    purchased_filter = request.args.get('purchased', 'all')
+    query = ShoppingItem.query.options(joinedload(ShoppingItem.recipe))
+    if purchased_filter == 'true':
+        query = query.filter_by(purchased=True)
+    elif purchased_filter == 'false':
+        query = query.filter_by(purchased=False)
+    items = query.order_by(ShoppingItem.purchased.asc(), ShoppingItem.created_at.desc()).all()
+    return jsonify([item.to_dict() for item in items])
+
+
+@api_bp.route('/shopping-items', methods=['POST'])
+@limiter.limit("30 per minute")
+def add_shopping_items():
+    """Add items to the shopping list."""
+    data = request.get_json()
+    if not data or 'items' not in data:
+        return jsonify({'error': 'items array is required'}), 400
+    if not isinstance(data['items'], list):
+        return jsonify({'error': 'items must be an array'}), 400
+
+    added = []
+    try:
+        for item_data in data['items']:
+            name = item_data.get('name', '').strip()
+            if not name:
+                continue
+            ri = item_data.get('recipe_id')
+            existing = ShoppingItem.query.filter(
+                db.func.lower(ShoppingItem.name) == db.func.lower(name),
+                ShoppingItem.purchased == False
+            ).first()
+            if existing:
+                continue
+
+            item = ShoppingItem(name=name, recipe_id=ri if ri else None)
+            db.session.add(item)
+            db.session.flush()
+            added.append(item.to_dict())
+
+        db.session.commit()
+        return jsonify({'items': added, 'count': len(added)}), 201
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Failed to add shopping items: {e}')
+        return jsonify({'error': 'Failed to add items'}), 500
+
+
+@api_bp.route('/shopping-items/<int:item_id>', methods=['PUT'])
+def update_shopping_item(item_id):
+    """Update a shopping item."""
+    item = ShoppingItem.query.get_or_404(item_id)
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    if 'purchased' in data:
+        item.purchased = bool(data['purchased'])
+    if 'name' in data and data['name'].strip():
+        item.name = data['name'].strip()
+    db.session.commit()
+    return jsonify(item.to_dict())
+
+
+@api_bp.route('/shopping-items/<int:item_id>', methods=['DELETE'])
+def delete_shopping_item(item_id):
+    """Delete a shopping item."""
+    item = ShoppingItem.query.get_or_404(item_id)
+    db.session.delete(item)
+    db.session.commit()
+    return '', 204
+
+
+@api_bp.route('/shopping-items/clear-purchased', methods=['POST'])
+def clear_purchased_items():
+    """Remove all purchased items."""
+    count = ShoppingItem.query.filter_by(purchased=True).delete()
+    db.session.commit()
+    return jsonify({'deleted': count})
 
 
 # ============================================================================
