@@ -1,14 +1,32 @@
 """Authentication module for Kitchen Companion."""
+import re
 from datetime import datetime
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import (
     create_access_token, jwt_required, get_jwt_identity, get_jwt
 )
 from flask_bcrypt import Bcrypt
-from app import db
+from app import db, limiter
 
 auth_bp = Blueprint('auth', __name__)
 bcrypt = Bcrypt()
+
+
+def validate_password(password):
+    """Validate password meets complexity requirements.
+    
+    Returns:
+        tuple: (is_valid: bool, error_message: str or None)
+    """
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters"
+    if not re.search(r'[A-Z]', password):
+        return False, "Password must contain an uppercase letter"
+    if not re.search(r'[a-z]', password):
+        return False, "Password must contain a lowercase letter"
+    if not re.search(r'\d', password):
+        return False, "Password must contain a digit"
+    return True, None
 
 
 class User(db.Model):
@@ -112,8 +130,10 @@ def register():
     # Validation
     if not username or len(username) < 3 or len(username) > 64:
         return jsonify({'error': 'Username must be 3-64 characters'}), 400
-    if not password or len(password) < 8:
-        return jsonify({'error': 'Password must be at least 8 characters'}), 400
+    
+    valid, err = validate_password(password)
+    if not valid:
+        return jsonify({'error': err}), 400
 
     # Check uniqueness
     if User.query.filter(db.func.lower(User.username) == db.func.lower(username)).first():
@@ -140,6 +160,7 @@ def register():
 
 
 @auth_bp.route('/login', methods=['POST'])
+@limiter.limit("5 per minute")
 def login():
     """Login and receive a JWT access token.
     

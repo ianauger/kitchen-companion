@@ -26,6 +26,7 @@ RUN pip install --no-cache-dir -r requirements.txt && \
         Flask-Limiter==3.5.1 \
         flask-jwt-extended==4.6.0 \
         Flask-Bcrypt==1.0.1 \
+        Flask-WTF==1.2.1 \
         gunicorn==21.2.0
 
 # ---------------------------------------------------------------------------
