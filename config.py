@@ -17,18 +17,26 @@ MAX_PER_PAGE = 100
 
 class Config:
     """Base configuration."""
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
-    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'dev-jwt-secret-change-in-production')
+    SECRET_KEY = os.environ.get('SECRET_KEY')
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         'DATABASE_URL',
         f'sqlite:///{BASE_DIR / "kitchen_companion.db"}'
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    
+    def __init__(self):
+        if not self.SECRET_KEY:
+            raise ValueError("SECRET_KEY environment variable must be set")
+        if not self.JWT_SECRET_KEY:
+            raise ValueError("JWT_SECRET_KEY environment variable must be set")
 
 
 class DevelopmentConfig(Config):
     """Development configuration."""
     DEBUG = True
+    SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'dev-jwt-secret-change-in-production')
 
 
 class ProductionConfig(Config):

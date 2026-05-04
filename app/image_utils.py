@@ -267,23 +267,14 @@ def delete_image(image_path):
     if not image_path:
         return False
     
-    # Security: Prevent path traversal
-    if '..' in image_path or image_path.startswith('/'):
-        current_app.logger.warning(f'Blocked path traversal attempt: {image_path}')
-        return False
-    
     try:
         absolute_path = Path(current_app.static_folder) / image_path
         
         # Security: Ensure the resolved path is within the static folder
-        try:
-            resolved_path = absolute_path.resolve()
-            resolved_static = Path(current_app.static_folder).resolve()
-            if not str(resolved_path).startswith(str(resolved_static)):
-                current_app.logger.warning(f'Blocked path escape attempt: {image_path}')
-                return False
-        except (OSError, ValueError) as e:
-            current_app.logger.warning(f'Path resolution error for {image_path}: {e}')
+        resolved_path = absolute_path.resolve()
+        resolved_static = Path(current_app.static_folder).resolve()
+        if not str(resolved_path).startswith(str(resolved_static)):
+            current_app.logger.warning(f'Blocked path escape attempt: {image_path}')
             return False
         
         if absolute_path.exists():

@@ -5,6 +5,7 @@ python-dotenv==1.0.0
 requests==2.31.0
 flask-jwt-extended==4.6.0
 Flask-Bcrypt==1.0.1
+Flask-WTF==1.2.1
 
 # Development dependencies
 pytest==7.4.3
