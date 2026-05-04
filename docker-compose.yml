@@ -1,6 +1,16 @@
 # ============================================================================
-# Kitchen Companion - Docker Compose (Local Development)
+# Kitchen Companion - Docker Compose
 # ============================================================================
+#
+# Usage:
+#   docker compose up -d         # start in background
+#   docker compose down          # stop and remove container
+#   docker compose build         # rebuild the image after code changes
+#   docker compose logs -f web   # follow logs
+#
+# The SQLite DB and uploaded images live in named volumes so they persist
+# across container restarts and rebuilds.
+#
 version: "3.9"
 
 services:
@@ -15,16 +25,11 @@ services:
       # Persist the SQLite database across container restarts
       - db-data:/app/instance
       # Persist uploaded recipe images
-      - upload-data:/app/static/uploads/recipes
-      # Live-reload source during development (comment out for production)
-      - .:/app
-    environment:
-      - FLASK_APP=app.py
-      - FLASK_ENV=development
-      - SECRET_KEY=${SECRET_KEY:-change-me-in-production-use-a-real-secret}
-      - DATABASE_URL=sqlite:///instance/kitchen_companion.db
+      - upload-data:/app/app/static/uploads/recipes
+    env_file:
+      - .env
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health')"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
       interval: 30s
       timeout: 10s
       retries: 3

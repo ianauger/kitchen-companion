@@ -60,4 +60,4 @@ EXPOSE 5000
 
 # Health-friendly default: gunicorn for production, falls back to Flask dev server
 # via docker-compose override if needed
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "app:create_app()"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "app:create_app('development')"]
