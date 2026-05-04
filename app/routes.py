@@ -3,6 +3,7 @@ from flask import Blueprint, request, jsonify, render_template, redirect, url_fo
 from werkzeug.utils import secure_filename
 from app import db, limiter
 from app.models import Recipe, Tag, Note, ShoppingItem
+from app.auth import editor_or_admin, admin_required
 from app.image_utils import download_image, delete_image, validate_url, get_upload_dir
 from config import (
     MAX_NOTE_LENGTH, MAX_TAG_NAME_LENGTH,
@@ -437,6 +438,7 @@ def get_recipes():
 
 @api_bp.route('/recipes', methods=['POST'])
 @limiter.limit("10 per minute")
+@editor_or_admin
 def create_recipe():
     """Create a new recipe.
     
@@ -558,6 +560,7 @@ def get_recipe(recipe_id):
 
 
 @api_bp.route('/recipes/<int:recipe_id>', methods=['PUT'])
+@editor_or_admin
 def update_recipe(recipe_id):
     """Update an existing recipe.
     
@@ -624,6 +627,7 @@ def update_recipe(recipe_id):
 
 
 @api_bp.route('/recipes/<int:recipe_id>', methods=['DELETE'])
+@admin_required
 def delete_recipe(recipe_id):
     """Delete a recipe.
     
@@ -706,6 +710,7 @@ def get_shopping_items():
 
 @api_bp.route('/shopping-items', methods=['POST'])
 @limiter.limit("30 per minute")
+@editor_or_admin
 def add_shopping_items():
     """Add items to the shopping list."""
     data = request.get_json()
@@ -742,6 +747,7 @@ def add_shopping_items():
 
 
 @api_bp.route('/shopping-items/<int:item_id>', methods=['PUT'])
+@editor_or_admin
 def update_shopping_item(item_id):
     """Update a shopping item."""
     item = ShoppingItem.query.get_or_404(item_id)
@@ -757,6 +763,7 @@ def update_shopping_item(item_id):
 
 
 @api_bp.route('/shopping-items/<int:item_id>', methods=['DELETE'])
+@admin_required
 def delete_shopping_item(item_id):
     """Delete a shopping item."""
     item = ShoppingItem.query.get_or_404(item_id)
@@ -766,6 +773,7 @@ def delete_shopping_item(item_id):
 
 
 @api_bp.route('/shopping-items/clear-purchased', methods=['POST'])
+@editor_or_admin
 def clear_purchased_items():
     """Remove all purchased items."""
     count = ShoppingItem.query.filter_by(purchased=True).delete()
@@ -834,6 +842,7 @@ def create_note(recipe_id):
 
 @api_bp.route('/notes/<int:note_id>', methods=['PUT'])
 @limiter.limit("30 per minute")
+@editor_or_admin
 def update_note(note_id):
     """Update an existing note.
     
@@ -868,6 +877,7 @@ def update_note(note_id):
 
 
 @api_bp.route('/notes/<int:note_id>', methods=['DELETE'])
+@admin_required
 def delete_note(note_id):
     """Delete a note.
     
@@ -885,6 +895,7 @@ def delete_note(note_id):
 
 @api_bp.route('/recipes/<int:recipe_id>/tags', methods=['POST'])
 @limiter.limit("20 per minute")
+@editor_or_admin
 def add_recipe_tag(recipe_id):
     """Add a tag to a recipe.
     
