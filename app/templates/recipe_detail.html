@@ -86,8 +86,15 @@
 
                 {% if recipe.ingredients %}
                 <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                    <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Ingredients</h3>
-                    <div class="text-gray-600 whitespace-pre-line leading-relaxed">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Ingredients</h3>
+                        <button id="add-to-list-btn"
+                            class="px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled>
+                            Add to List
+                        </button>
+                    </div>
+                    <div id="ingredients-container" class="text-gray-600 whitespace-pre-line leading-relaxed">
                         {{ recipe.ingredients }}
                     </div>
                 </div>
@@ -407,5 +414,89 @@
 
     // Load notes when page loads
     document.addEventListener('DOMContentLoaded', loadNotes);
+
+    // Parse ingredients into checkbox lines
+    function initIngredientCheckboxes() {
+        const container = document.getElementById('ingredients-container');
+        if (!container) return;
+
+        const text = container.textContent.trim();
+        const lines = text.split('\n').filter(line => line.trim());
+
+        if (lines.length === 0) return;
+
+        const addBtn = document.getElementById('add-to-list-btn');
+        if (!addBtn) return;
+
+        container.textContent = '';
+
+        lines.forEach((line, i) => {
+            const div = document.createElement('div');
+            div.className = 'flex items-start gap-3 py-1.5';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'ingredient-checkbox w-4 h-4 md:w-5 md:h-5 mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer flex-shrink-0';
+            checkbox.id = `ing-check-${i}`;
+            checkbox.addEventListener('change', updateAddButton);
+
+            const label = document.createElement('label');
+            label.htmlFor = `ing-check-${i}`;
+            label.className = 'text-base text-gray-700 cursor-pointer select-none flex-1';
+            label.textContent = line.trim();
+
+            div.appendChild(checkbox);
+            div.appendChild(label);
+            container.appendChild(div);
+        });
+
+        updateAddButton();
+    }
+
+    function updateAddButton() {
+        const checkboxes = document.querySelectorAll('.ingredient-checkbox:checked');
+        const btn = document.getElementById('add-to-list-btn');
+        if (!btn) return;
+        btn.disabled = checkboxes.length === 0;
+        btn.textContent = checkboxes.length > 0 ? `Add to List (${checkboxes.length})` : 'Add to List';
+    }
+
+    document.getElementById('add-to-list-btn')?.addEventListener('click', async function() {
+        const checkboxes = document.querySelectorAll('.ingredient-checkbox:checked');
+        const items = Array.from(checkboxes).map(cb => ({
+            name: cb.nextElementSibling.textContent,
+            recipe_id: recipeId
+        }));
+
+        if (items.length === 0) return;
+
+        const btn = this;
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Adding...';
+
+        try {
+            const response = await fetch('/api/shopping-items', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items })
+            });
+            if (!response.ok) throw new Error('Failed');
+            const data = await response.json();
+            // Uncheck all
+            document.querySelectorAll('.ingredient-checkbox').forEach(cb => cb.checked = false);
+            updateAddButton();
+        } catch (error) {
+            console.error('Error adding to shopping list:', error);
+            alert('Failed to add items to shopping list');
+        } finally {
+            btn.textContent = originalText;
+            btn.disabled = false;
+            updateAddButton();
+        }
+    });
+
+    // Initialize ingredient checkboxes on load
+    document.addEventListener('DOMContentLoaded', initIngredientCheckboxes);
 </script>
 {% endblock %}
