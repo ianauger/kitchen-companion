@@ -134,6 +134,7 @@ class Tag(db.Model):
             "LENGTH(name) <= 100",
             name='ck_tag_name_length'
         ),
+        db.UniqueConstraint('name', 'tag_type', name='uix_tag_name_type'),
     )
     
     @classmethod

@@ -29,6 +29,10 @@ def create_app(config_name='default'):
     app = Flask(__name__)
     app.config.from_object(config_by_name[config_name])
     
+    # Disable CSRF in testing mode
+    if app.config.get('TESTING'):
+        app.config['WTF_CSRF_ENABLED'] = False
+    
     # Ensure upload directory exists
     upload_dir = os.path.join(app.static_folder, 'uploads', 'recipes')
     os.makedirs(upload_dir, exist_ok=True)

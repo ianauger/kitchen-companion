@@ -1,6 +1,7 @@
 """Configuration module for Kitchen Companion app."""
 import os
 from pathlib import Path
+from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -30,6 +31,9 @@ class Config:
             raise ValueError("SECRET_KEY environment variable must be set")
         if not self.JWT_SECRET_KEY:
             raise ValueError("JWT_SECRET_KEY environment variable must be set")
+    
+    # JWT settings
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
 
 
 class DevelopmentConfig(Config):
@@ -37,6 +41,7 @@ class DevelopmentConfig(Config):
     DEBUG = True
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'dev-jwt-secret-change-in-production')
+    WTF_CSRF_ENABLED = False
 
 
 class ProductionConfig(Config):

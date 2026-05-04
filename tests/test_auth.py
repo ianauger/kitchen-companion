@@ -5,6 +5,9 @@ from app import create_app, db
 from app.models import Recipe
 from app.auth import User
 
+# Valid test password that meets complexity requirements
+TEST_PASSWORD = 'Password123'
+
 
 # ============================================================================
 # Helpers
@@ -61,8 +64,8 @@ def app():
     app.config.update({
         "TESTING": True,
         "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
-        "SECRET_KEY": "test-secret",
-        "JWT_SECRET_KEY": "test-jwt-secret",
+        "SECRET_KEY": "test-secret-key-exactly-32-bytes",
+        "JWT_SECRET_KEY": "test-jwt-secret-key-exactly-32-bytes",
     })
     with app.app_context():
         db.create_all()
@@ -81,10 +84,10 @@ def bootstrap_admin(app):
     """Create an admin user and return login credentials."""
     with app.app_context():
         user = User(username='admin', role='admin')
-        user.set_password('password123')
+        user.set_password(TEST_PASSWORD)
         db.session.add(user)
         db.session.commit()
-    return {'username': 'admin', 'password': 'password123'}
+    return {'username': 'admin', 'password': TEST_PASSWORD}
 
 
 @pytest.fixture
@@ -97,20 +100,20 @@ def admin_token(client, bootstrap_admin):
 def editor_token(client, app, admin_token):
     """Create an editor user via admin, return token."""
     # Register as viewer first
-    _register(client, 'editor_user', 'password123', role='viewer')
+    _register(client, 'editor_user', TEST_PASSWORD, role='viewer')
     # Admin upgrades to editor
     client.put('/api/auth/users/2/role',
                data=json.dumps({'role': 'editor'}),
                content_type='application/json',
                headers=_auth_header(admin_token))
-    token, _ = _login(client, 'editor_user', 'password123')
+    token, _ = _login(client, 'editor_user', TEST_PASSWORD)
     return token
 
 
 @pytest.fixture
 def viewer_token(client):
-    _register(client, 'viewer_user', 'password123', role='viewer')
-    token, _ = _login(client, 'viewer_user', 'password123')
+    _register(client, 'viewer_user', TEST_PASSWORD, role='viewer')
+    token, _ = _login(client, 'viewer_user', TEST_PASSWORD)
     return token
 
 
@@ -120,7 +123,7 @@ def viewer_token(client):
 
 class TestRegistration:
     def test_register_viewer(self, client):
-        resp = _register(client, 'newuser', 'password123')
+        resp = _register(client, 'newuser', TEST_PASSWORD)
         assert resp.status_code == 201
         data = json.loads(resp.data)
         assert data['username'] == 'newuser'
@@ -128,19 +131,19 @@ class TestRegistration:
 
     def test_register_first_user_as_admin(self, client):
         """First user in the system can register as admin."""
-        resp = _register(client, 'firstadmin', 'password123', role='admin')
+        resp = _register(client, 'firstadmin', TEST_PASSWORD, role='admin')
         assert resp.status_code == 201
         data = json.loads(resp.data)
         assert data['role'] == 'admin'
 
     def test_register_non_first_as_admin_denied(self, client, bootstrap_admin):
         """Only the first user can self-assign admin. Others need an admin."""
-        resp = _register(client, 'wannabe_admin', 'password123', role='admin')
+        resp = _register(client, 'wannabe_admin', TEST_PASSWORD, role='admin')
         assert resp.status_code == 403
 
     def test_register_duplicate_username(self, client):
-        _register(client, 'sameuser', 'password123')
-        resp = _register(client, 'sameuser', 'password123')
+        _register(client, 'sameuser', TEST_PASSWORD)
+        resp = _register(client, 'sameuser', TEST_PASSWORD)
         assert resp.status_code == 409
 
     def test_register_short_password(self, client):
@@ -148,16 +151,16 @@ class TestRegistration:
         assert resp.status_code == 400
 
     def test_register_short_username(self, client):
-        resp = _register(client, 'ab', 'password123')
+        resp = _register(client, 'ab', TEST_PASSWORD)
         assert resp.status_code == 400
 
     def test_register_invalid_role(self, client):
-        resp = _register(client, 'user', 'password123', role='superuser')
+        resp = _register(client, 'user', TEST_PASSWORD, role='superuser')
         assert resp.status_code == 400
 
     def test_register_case_insensitive_duplicate(self, client):
-        _register(client, 'CaseUser', 'password123')
-        resp = _register(client, 'caseuser', 'password123')
+        _register(client, 'CaseUser', TEST_PASSWORD)
+        resp = _register(client, 'caseuser', TEST_PASSWORD)
         assert resp.status_code == 409
 
 
@@ -179,7 +182,7 @@ class TestLogin:
 
     def test_login_nonexistent_user(self, client):
         resp = client.post('/api/auth/login',
-                          data=json.dumps({'username': 'nobody', 'password': 'password123'}),
+                          data=json.dumps({'username': 'nobody', 'password': TEST_PASSWORD}),
                           content_type='application/json')
         assert resp.status_code == 401
 
