@@ -1,4 +1,4 @@
-name: Build and Deploy
+name: Build, Review, and Deploy
 
 on:
   push:
@@ -18,6 +18,8 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    outputs:
+      test_passed: ${{ steps.set_output.outputs.test_passed }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -35,18 +37,70 @@ jobs:
           pip install pytest pytest-flask freezegun
 
       - name: Run tests
-        run: python -m pytest tests/
+        id: run_tests
+        run: python -m pytest tests/ --junitxml=test-results.xml
+        continue-on-error: true
+
+      - name: Set test output
+        id: set_output
+        run: |
+          if [ -f test-results.xml ]; then
+            FAILURES=$(grep -c 'failures="[1-9]' test-results.xml 2>/dev/null || echo 0)
+            if [ "$FAILURES" -gt 0 ] || [ ! -f test-results.xml ]; then
+              echo "test_passed=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          fi
+          echo "test_passed=true" >> $GITHUB_OUTPUT
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results.xml
+          retention-days: 7
+
+  code-review:
+    needs: test
+    if: github.event_name == 'pull_request' && needs.test.outputs.test_passed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate diff
+        run: |
+          git diff origin/${{ github.base_ref }}...origin/${{ github.head_ref }} > pr.diff
+          echo "Diff size: $(wc -l < pr.diff) lines"
+
+      - name: Install review tools
+        run: |
+          pip install requests
+
+      - name: Run automated code review
+        id: review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          DIFF_FILE: pr.diff
+        run: |
+          python .github/scripts/code-review.py
+        continue-on-error: true
 
   build-and-push:
-    # Only run on push to main or tags, NOT on PRs
-    # PRs get test coverage but don't publish artifacts
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     needs: test
     permissions:
       contents: read
       packages: write
-
 
     steps:
       - name: Checkout repository
