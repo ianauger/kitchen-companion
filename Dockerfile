@@ -53,7 +53,9 @@ COPY . .
 
 # Ensure upload directory exists with correct ownership
 RUN mkdir -p /app/static/uploads/recipes && \
-    chown -R appuser:appuser /app
+    mkdir -p /app/instance && \
+    chown -R appuser:appuser /app && \
+    chmod +x /app/scripts/entrypoint.sh
 
 # Switch to non-root user
 USER appuser
@@ -63,4 +65,5 @@ EXPOSE 5000
 
 # Health-friendly default: gunicorn for production, falls back to Flask dev server
 # via docker-compose override if needed
+ENTRYPOINT ["/app/scripts/entrypoint.sh"]
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "app:create_app('development')"]

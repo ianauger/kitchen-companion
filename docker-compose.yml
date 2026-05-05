@@ -3,21 +3,19 @@
 # ============================================================================
 #
 # Usage:
-#   docker compose up -d         # start in background
-#   docker compose down          # stop and remove container
-#   docker compose build         # rebuild the image after code changes
-#   docker compose logs -f web   # follow logs
+#   docker compose pull            # pull latest image from GHCR
+#   docker compose up -d           # start in background
+#   docker compose down            # stop and remove container
+#   docker compose logs -f web     # follow logs
+#   docker compose build           # local dev build (fallback if not using GHCR)
 #
 # The SQLite DB and uploaded images live in named volumes so they persist
 # across container restarts and rebuilds.
-#
-version: "3.9"
 
 services:
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/ianauger/kitchen-companion:latest
+    pull_policy: always
     container_name: kitchen-companion
     ports:
       - "5000:5000"
