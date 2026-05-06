@@ -476,7 +476,7 @@
         btn.textContent = 'Adding...';
 
         try {
-            const response = await fetch('/api/shopping-items', {
+            const response = await fetch('/shopping-items', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ items })

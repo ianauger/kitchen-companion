@@ -85,6 +85,94 @@ def shopping_list():
     return render_template('shopping_list.html', items=items)
 
 
+# ============================================================================
+# Shopping List Web UI Routes (session-based auth)
+# ============================================================================
+
+@main_bp.route('/shopping-items', methods=['GET'])
+def get_shopping_items_web():
+    """Get all shopping list items (web UI, no auth required for GET)."""
+    from sqlalchemy.orm import joinedload
+    items = ShoppingItem.query.options(
+        joinedload(ShoppingItem.recipe)
+    ).order_by(ShoppingItem.purchased.asc(), ShoppingItem.created_at.desc()).all()
+    return jsonify([item.to_dict() for item in items])
+
+
+@main_bp.route('/shopping-items', methods=['POST'])
+@limiter.limit("30 per minute")
+@editor_or_admin_web
+def add_shopping_items_web():
+    """Add items to the shopping list (web UI, session auth)."""
+    from flask import current_app
+    data = request.get_json()
+    if not data or 'items' not in data:
+        return jsonify({'error': 'items array is required'}), 400
+    if not isinstance(data['items'], list):
+        return jsonify({'error': 'items must be an array'}), 400
+
+    added = []
+    try:
+        for item_data in data['items']:
+            name = item_data.get('name', '').strip()
+            if not name:
+                continue
+            ri = item_data.get('recipe_id')
+            existing = ShoppingItem.query.filter(
+                db.func.lower(ShoppingItem.name) == db.func.lower(name),
+                ShoppingItem.purchased == False
+            ).first()
+            if existing:
+                continue
+
+            item = ShoppingItem(name=name, recipe_id=ri if ri else None)
+            db.session.add(item)
+            db.session.flush()
+            added.append(item.to_dict())
+
+        db.session.commit()
+        return jsonify({'items': added, 'count': len(added)}), 201
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Failed to add shopping items (web): {e}')
+        return jsonify({'error': 'Failed to add items'}), 500
+
+
+@main_bp.route('/shopping-items/<int:item_id>', methods=['PUT'])
+@editor_or_admin_web
+def update_shopping_item_web(item_id):
+    """Update a shopping item (web UI, session auth)."""
+    item = ShoppingItem.query.get_or_404(item_id)
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    if 'purchased' in data:
+        item.purchased = bool(data['purchased'])
+    if 'name' in data and data['name'].strip():
+        item.name = data['name'].strip()
+    db.session.commit()
+    return jsonify(item.to_dict())
+
+
+@main_bp.route('/shopping-items/<int:item_id>/delete', methods=['POST'])
+@editor_or_admin_web
+def delete_shopping_item_web(item_id):
+    """Delete a shopping item (web UI, session auth)."""
+    item = ShoppingItem.query.get_or_404(item_id)
+    db.session.delete(item)
+    db.session.commit()
+    return '', 204
+
+
+@main_bp.route('/shopping-items/clear-purchased', methods=['POST'])
+@editor_or_admin_web
+def clear_purchased_items_web():
+    """Delete all purchased items (web UI, session auth)."""
+    deleted = ShoppingItem.query.filter_by(purchased=True).delete()
+    db.session.commit()
+    return jsonify({'deleted': deleted}), 200
+
+
 @main_bp.route('/features')
 def features():
     """Render the features page."""

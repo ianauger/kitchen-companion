@@ -51,7 +51,7 @@
 <script>
     async function loadShoppingList() {
         try {
-            const response = await fetch('/api/shopping-items');
+            const response = await fetch('/shopping-items');
             if (!response.ok) throw new Error('Failed to load');
             const items = await response.json();
             renderShoppingList(items);
@@ -103,7 +103,7 @@
 
     async function togglePurchased(itemId, purchased) {
         try {
-            await fetch(`/api/shopping-items/${itemId}`, {
+            await fetch(`/shopping-items/${itemId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ purchased })
@@ -116,7 +116,7 @@
 
     async function deleteItem(itemId) {
         try {
-            await fetch(`/api/shopping-items/${itemId}`, { method: 'DELETE' });
+            await fetch(`/shopping-items/${itemId}/delete`, { method: 'POST' });
             await loadShoppingList();
         } catch (error) {
             console.error('Error deleting item:', error);
@@ -140,7 +140,7 @@
         if (!name) return;
 
         try {
-            const response = await fetch('/api/shopping-items', {
+            const response = await fetch('/shopping-items', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ items: [{ name }] })
@@ -157,7 +157,7 @@
     // Clear purchased
     document.getElementById('clear-purchased-btn').addEventListener('click', async () => {
         try {
-            await fetch('/api/shopping-items/clear-purchased', { method: 'POST' });
+            await fetch('/shopping-items/clear-purchased', { method: 'POST' });
             await loadShoppingList();
         } catch (error) {
             console.error('Error clearing items:', error);
