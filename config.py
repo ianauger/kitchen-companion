@@ -14,7 +14,7 @@ DOWNLOAD_CHUNK_SIZE = 8192  # 8KB
 
 # Pagination defaults
 DEFAULT_PER_PAGE = 20
-MAX_PER_PAGE = 100
+MAX_PER_PAGE = 200
 
 class Config:
     """Base configuration."""
