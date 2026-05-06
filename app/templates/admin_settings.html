@@ -28,7 +28,7 @@
   <!-- Create User Form -->
   <div class="bg-white rounded-2xl shadow-lg p-6 mb-8">
     <h2 class="text-lg font-semibold text-gray-900 mb-4">Create New User</h2>
-    <form method="POST" action="{{ url_for('auth.admin_create_user') }}" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+    <form method="POST" action="{{ url_for('web_auth.admin_create_user') }}" class="grid grid-cols-1 md:grid-cols-4 gap-4">
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
         <input type="text" name="username" required minlength="3" maxlength="64"
@@ -96,7 +96,7 @@
                   </div>
                 </td>
                 <td class="px-6 py-4">
-                  <form method="POST" action="{{ url_for('auth.admin_update_role', user_id=user.id) }}" class="inline-flex items-center space-x-2">
+                  <form method="POST" action="{{ url_for('web_auth.admin_update_role', user_id=user.id) }}" class="inline-flex items-center space-x-2">
                     <select name="role"
                       class="text-sm px-2 py-1 rounded-lg border border-gray-200 focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20 outline-none bg-white"
                       {% if user.id == session.user_id %}disabled{% endif %}>
@@ -126,7 +126,7 @@
                     </button>
                     <!-- Delete -->
                     {% if user.id != session.user_id %}
-                      <form method="POST" action="{{ url_for('auth.admin_delete_user', user_id=user.id) }}"
+                      <form method="POST" action="{{ url_for('web_auth.admin_delete_user', user_id=user.id) }}"
                         onsubmit="return confirm('Delete user {{ user.username }}? This cannot be undone.');">
                         <button type="submit"
                           class="text-xs px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg transition-colors font-medium">

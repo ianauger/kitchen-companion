@@ -37,7 +37,7 @@ class Config:
     # Session settings (web UI)
     PERMANENT_SESSION_LIFETIME = timedelta(hours=12)
     SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = os.environ.get('SESSION_SECURE', 'true').lower() == 'true'
     SESSION_COOKIE_SAMESITE = 'Lax'
 
 
