@@ -110,14 +110,13 @@
             <!-- Results will be populated by JavaScript -->
         </div>
 
-        <!-- Load More -->
-        <div id="loadMoreContainer" class="hidden text-center mt-8">
-            <button id="loadMoreBtn" onclick="loadMore()"
-                    class="px-8 py-3 bg-primary-600 text-white font-medium rounded-xl hover:bg-primary-700 transition-colors shadow-md hover:shadow-lg">
-                Load More Recipes
-            </button>
-            <p id="loadMoreStatus" class="text-sm text-gray-500 mt-2"></p>
-        </div>
+        <!-- Pagination -->
+        <nav id="paginationNav" class="flex items-center justify-between mt-8" aria-label="Search results pages">
+            <p id="paginationInfo" class="text-sm text-gray-500"></p>
+            <div class="flex items-center gap-1" id="paginationButtons">
+                <!-- Built dynamically by JS -->
+            </div>
+        </nav>
         
         <!-- No Results State -->
         <div id="noResults" class="hidden text-center py-16">
@@ -141,30 +140,30 @@
     let isLoading = false;
 
     let currentPage = 1;
+    let totalPages = 1;
     let totalResults = 0;
-    let hasMore = false;
 
     // Load initial results on page load
     document.addEventListener('DOMContentLoaded', function() {
-        search();
+        loadPage(1);
 
         document.getElementById('searchInput').addEventListener('input', handleSearchDebounced);
-        document.getElementById('prepTimeFilter').addEventListener('change', () => { search(); });
-        document.getElementById('cookingTimeFilter').addEventListener('change', () => { search(); });
-        document.getElementById('totalTimeFilter').addEventListener('change', () => { search(); });
+        document.getElementById('prepTimeFilter').addEventListener('change', () => { loadPage(1); });
+        document.getElementById('cookingTimeFilter').addEventListener('change', () => { loadPage(1); });
+        document.getElementById('totalTimeFilter').addEventListener('change', () => { loadPage(1); });
 
         document.querySelectorAll('.tag-filter').forEach(button => {
             button.addEventListener('click', function() {
                 toggleTag(this);
-                search();
+                loadPage(1);
             });
         });
     });
 
-    function buildUrl(append = false) {
+    function buildUrl(page) {
         const params = new URLSearchParams();
         params.set('per_page', PER_PAGE);
-        params.set('page', currentPage);
+        params.set('page', page);
         if (searchTerm) params.set('search', searchTerm);
         if (activeTags.size > 0) params.set('tags', Array.from(activeTags).join(','));
         if (maxPrepTime !== null) params.set('max_prep_time', maxPrepTime);
@@ -174,46 +173,33 @@
         return `/api/recipes?${params.toString()}`;
     }
 
-    function search() {
-        currentPage = 1;
-        clearResults();
-        fetchPage(false);
-    }
-
-    function loadMore() {
-        if (isLoading || !hasMore) return;
-        currentPage++;
-        fetchPage(true);
-    }
-
-    async function fetchPage(append) {
+    async function loadPage(page) {
+        if (isLoading) return;
+        currentPage = page;
         setLoading(true);
         try {
-            const url = buildUrl(append);
+            const url = buildUrl(page);
             const response = await fetch(url);
             const data = await response.json();
             const recipes = data.recipes || [];
             const pagination = data.pagination || {};
             totalResults = pagination.total || 0;
-            hasMore = pagination.has_next || false;
-            displayResults(recipes, append, pagination);
+            totalPages = pagination.pages || 1;
+            displayResults(recipes, pagination);
+            buildPagination();
         } catch (error) {
             console.error('Error fetching recipes:', error);
-            if (!append) showError('Error loading recipes. Please try again.');
+            showError('Error loading recipes. Please try again.');
         } finally {
             setLoading(false);
         }
-    }
-
-    function clearResults() {
-        document.getElementById('resultsGrid').innerHTML = '';
     }
 
     function handleSearchDebounced() {
         if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
         searchDebounceTimer = setTimeout(() => {
             searchTerm = document.getElementById('searchInput').value.trim();
-            search();
+            loadPage(1);
         }, 300);
     }
 
@@ -228,6 +214,88 @@
             button.classList.remove('bg-gray-100', 'text-gray-700');
             button.classList.add('bg-primary-600', 'text-white', 'ring-2', 'ring-primary-400');
         }
+    }
+
+    function buildPagination() {
+        const container = document.getElementById('paginationButtons');
+        const info = document.getElementById('paginationInfo');
+        container.innerHTML = '';
+
+        if (totalPages <= 1) {
+            info.textContent = totalResults > 0 ? `${totalResults} result${totalResults !== 1 ? 's' : ''}` : '';
+            return;
+        }
+
+        const start = (currentPage - 1) * PER_PAGE + 1;
+        const end = Math.min(currentPage * PER_PAGE, totalResults);
+        info.textContent = `Showing ${start}–${end} of ${totalResults} results`;
+
+        const createBtn = (label, page, active, disabled) => {
+            const btn = document.createElement('button');
+            btn.textContent = label;
+            btn.className = active
+                ? 'relative z-10 inline-flex items-center px-4 py-2 text-sm font-semibold text-white bg-primary-600 rounded-lg focus:z-20'
+                : disabled
+                    ? 'relative inline-flex items-center px-4 py-2 text-sm text-gray-400 cursor-default rounded-lg'
+                    : 'relative inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-white rounded-lg hover:bg-gray-50 focus:z-20 ring-1 ring-inset ring-gray-200';
+            if (!disabled && !active) {
+                btn.addEventListener('click', () => loadPage(page));
+            }
+            btn.disabled = disabled || active;
+            return btn;
+        };
+
+        // Prev
+        container.appendChild(createBtn('← Prev', currentPage - 1, false, currentPage <= 1));
+
+        // Page numbers — show up to 7 with ellipsis
+        const pages = [];
+        const maxVisible = 7;
+        let startPage, endPage;
+
+        if (totalPages <= maxVisible) {
+            startPage = 1;
+            endPage = totalPages;
+        } else if (currentPage <= 4) {
+            startPage = 1;
+            endPage = maxVisible - 1;
+            pages.push({ type: 'last', value: totalPages });
+        } else if (currentPage >= totalPages - 3) {
+            startPage = totalPages - (maxVisible - 2);
+            endPage = totalPages;
+            pages.unshift({ type: 'first', value: 1 });
+        } else {
+            startPage = currentPage - 2;
+            endPage = currentPage + 2;
+            pages.push({ type: 'first', value: 1 });
+            pages.push({ type: 'last', value: totalPages });
+        }
+
+        for (let p = startPage; p <= endPage; p++) {
+            pages.push({ type: 'page', value: p });
+        }
+
+        // Sort and deduplicate, inserting ellipsis markers
+        const sorted = [...new Map(pages.map(p => [p.value, p])).values()]
+            .sort((a, b) => a.value - b.value);
+
+        for (let i = 0; i < sorted.length; i++) {
+            if (i > 0 && sorted[i].value - sorted[i - 1].value > 1) {
+                const span = document.createElement('span');
+                span.className = 'px-2 text-gray-400';
+                span.textContent = '…';
+                container.appendChild(span);
+            }
+            container.appendChild(createBtn(
+                String(sorted[i].value),
+                sorted[i].value,
+                sorted[i].value === currentPage,
+                false
+            ));
+        }
+
+        // Next
+        container.appendChild(createBtn('Next →', currentPage + 1, false, currentPage >= totalPages));
     }
 
     function formatTime(minutes) {
@@ -260,37 +328,21 @@
         grid.appendChild(div);
     }
 
-    function displayResults(recipes, append, pagination) {
+    function displayResults(recipes, pagination) {
         const grid = document.getElementById('resultsGrid');
         const countEl = document.getElementById('resultCount');
         const noResults = document.getElementById('noResults');
-        const loadMoreContainer = document.getElementById('loadMoreContainer');
-        const loadMoreStatus = document.getElementById('loadMoreStatus');
 
-        if (!append) grid.innerHTML = '';
+        grid.innerHTML = '';
 
         const total = pagination.total || 0;
-        const showing = append ? Math.min(currentPage * PER_PAGE, total) : recipes.length;
         countEl.textContent = `${total} recipe${total !== 1 ? 's' : ''}`;
 
         if (total === 0) {
             noResults.classList.remove('hidden');
-            loadMoreContainer.classList.add('hidden');
             return;
         }
         noResults.classList.add('hidden');
-
-        // Show/hide Load More
-        if (pagination.has_next) {
-            loadMoreContainer.classList.remove('hidden');
-            loadMoreStatus.textContent = `Showing ${showing} of ${total}`;
-        } else if (currentPage > 1) {
-            loadMoreContainer.classList.remove('hidden');
-            document.getElementById('loadMoreBtn').classList.add('hidden');
-            loadMoreStatus.textContent = `All ${total} results loaded`;
-        } else {
-            loadMoreContainer.classList.add('hidden');
-        }
 
         recipes.forEach(recipe => {
             const card = document.createElement('a');
