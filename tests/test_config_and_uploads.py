@@ -92,7 +92,7 @@ class TestConfigConstants:
         assert DOWNLOAD_TIMEOUT == 15
         assert DOWNLOAD_CHUNK_SIZE == 8192
         assert DEFAULT_PER_PAGE == 20
-        assert MAX_PER_PAGE == 100
+        assert MAX_PER_PAGE == 200
 
 
 class TestSaveUploadedImage:

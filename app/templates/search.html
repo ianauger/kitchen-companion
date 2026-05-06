@@ -131,7 +131,7 @@
 
 {% block extra_js %}
 <script>
-    let allRecipes = [];
+    const PER_PAGE = 20;
     let activeTags = new Set();
     let searchTerm = '';
     let maxPrepTime = null;
@@ -139,71 +139,86 @@
     let maxTotalTime = null;
     let searchDebounceTimer = null;
     let isLoading = false;
-    
+
     let currentPage = 1;
+    let totalResults = 0;
     let hasMore = false;
 
-    // Load recipes on page load
+    // Load initial results on page load
     document.addEventListener('DOMContentLoaded', function() {
-        fetchRecipes();
-        
-        // Set up event listeners
+        search();
+
         document.getElementById('searchInput').addEventListener('input', handleSearchDebounced);
-        document.getElementById('prepTimeFilter').addEventListener('change', handleTimeFilter);
-        document.getElementById('cookingTimeFilter').addEventListener('change', handleTimeFilter);
-        document.getElementById('totalTimeFilter').addEventListener('change', handleTimeFilter);
-        
-        // Set up tag filter event listeners
+        document.getElementById('prepTimeFilter').addEventListener('change', () => { search(); });
+        document.getElementById('cookingTimeFilter').addEventListener('change', () => { search(); });
+        document.getElementById('totalTimeFilter').addEventListener('change', () => { search(); });
+
         document.querySelectorAll('.tag-filter').forEach(button => {
             button.addEventListener('click', function() {
                 toggleTag(this);
+                search();
             });
         });
     });
-    
-    async function fetchRecipes() {
+
+    function buildUrl(append = false) {
+        const params = new URLSearchParams();
+        params.set('per_page', PER_PAGE);
+        params.set('page', currentPage);
+        if (searchTerm) params.set('search', searchTerm);
+        if (activeTags.size > 0) params.set('tags', Array.from(activeTags).join(','));
+        if (maxPrepTime !== null) params.set('max_prep_time', maxPrepTime);
+        if (maxCookingTime !== null) params.set('max_cooking_time', maxCookingTime);
+        if (maxTotalTime !== null) params.set('max_total_time', maxTotalTime);
+        params.set('sort', '-created_at');
+        return `/api/recipes?${params.toString()}`;
+    }
+
+    function search() {
+        currentPage = 1;
+        clearResults();
+        fetchPage(false);
+    }
+
+    function loadMore() {
+        if (isLoading || !hasMore) return;
+        currentPage++;
+        fetchPage(true);
+    }
+
+    async function fetchPage(append) {
         setLoading(true);
         try {
-            // Load all recipes at once so client-side filters work correctly.
-            // With small datasets (< 200 recipes) this is fast; above that
-            // threshold we should move to server-side filtering + pagination.
-            const response = await fetch('/api/recipes?per_page=200');
+            const url = buildUrl(append);
+            const response = await fetch(url);
             const data = await response.json();
-            allRecipes = data.recipes || [];
-            hasMore = data.pagination?.has_next || false;
-            filterAndDisplay();
+            const recipes = data.recipes || [];
+            const pagination = data.pagination || {};
+            totalResults = pagination.total || 0;
+            hasMore = pagination.has_next || false;
+            displayResults(recipes, append, pagination);
         } catch (error) {
             console.error('Error fetching recipes:', error);
-            showError('Error loading recipes. Please try again.');
+            if (!append) showError('Error loading recipes. Please try again.');
         } finally {
             setLoading(false);
         }
     }
+
+    function clearResults() {
+        document.getElementById('resultsGrid').innerHTML = '';
+    }
+
     function handleSearchDebounced() {
-        if (searchDebounceTimer) {
-            clearTimeout(searchDebounceTimer);
-        }
+        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
         searchDebounceTimer = setTimeout(() => {
-            searchTerm = document.getElementById('searchInput').value.toLowerCase();
-            filterAndDisplay();
+            searchTerm = document.getElementById('searchInput').value.trim();
+            search();
         }, 300);
     }
-    
-    function handleTimeFilter() {
-        const prepSelect = document.getElementById('prepTimeFilter');
-        const cookingSelect = document.getElementById('cookingTimeFilter');
-        const totalSelect = document.getElementById('totalTimeFilter');
-        
-        maxPrepTime = prepSelect.value ? parseInt(prepSelect.value) : null;
-        maxCookingTime = cookingSelect.value ? parseInt(cookingSelect.value) : null;
-        maxTotalTime = totalSelect.value ? parseInt(totalSelect.value) : null;
-        
-        filterAndDisplay();
-    }
-    
+
     function toggleTag(button) {
         const tagName = button.dataset.tag;
-        
         if (activeTags.has(tagName)) {
             activeTags.delete(tagName);
             button.classList.remove('bg-primary-600', 'text-white', 'ring-2', 'ring-primary-400');
@@ -213,48 +228,8 @@
             button.classList.remove('bg-gray-100', 'text-gray-700');
             button.classList.add('bg-primary-600', 'text-white', 'ring-2', 'ring-primary-400');
         }
-        
-        filterAndDisplay();
     }
-    
-    function filterAndDisplay() {
-        const filtered = allRecipes.filter(recipe => {
-            // Search by title
-            if (searchTerm && !recipe.title.toLowerCase().includes(searchTerm)) {
-                return false;
-            }
-            
-            // Filter by tags (MUST match ALL selected tags)
-            if (activeTags.size > 0) {
-                const recipeTagNames = recipe.tags.map(t => t.name);
-                const hasAllTags = Array.from(activeTags).every(tag => recipeTagNames.includes(tag));
-                if (!hasAllTags) return false;
-            }
-            
-            // Filter by prep time
-            if (maxPrepTime !== null && recipe.prep_time !== null && recipe.prep_time > maxPrepTime) {
-                return false;
-            }
-            
-            // Filter by cooking time
-            if (maxCookingTime !== null && recipe.cooking_time !== null && recipe.cooking_time > maxCookingTime) {
-                return false;
-            }
-            
-            // Filter by total time
-            if (maxTotalTime !== null) {
-                const totalTime = (recipe.prep_time || 0) + (recipe.cooking_time || 0);
-                if (totalTime > maxTotalTime && totalTime > 0) {
-                    return false;
-                }
-            }
-            
-            return true;
-        });
-        
-        displayResults(filtered);
-    }
-    
+
     function formatTime(minutes) {
         if (minutes === null || minutes === undefined) return null;
         if (minutes < 60) return `${minutes}m`;
@@ -262,65 +237,69 @@
         const mins = minutes % 60;
         return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
     }
-    
+
     function escapeHtml(text) {
         if (typeof text !== 'string') return '';
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
-    
+
     function setLoading(loading) {
         isLoading = loading;
-        const searchLoading = document.getElementById('searchLoading');
-        if (loading) {
-            searchLoading.classList.remove('hidden');
-        } else {
-            searchLoading.classList.add('hidden');
-        }
+        const el = document.getElementById('searchLoading');
+        el.classList.toggle('hidden', !loading);
     }
-    
+
     function showError(message) {
         const grid = document.getElementById('resultsGrid');
         grid.innerHTML = '';
-        
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'col-span-full text-center text-red-500 py-8';
-        errorDiv.textContent = message;
-        grid.appendChild(errorDiv);
+        const div = document.createElement('div');
+        div.className = 'col-span-full text-center text-red-500 py-8';
+        div.textContent = message;
+        grid.appendChild(div);
     }
-    
-    function displayResults(recipes) {
+
+    function displayResults(recipes, append, pagination) {
         const grid = document.getElementById('resultsGrid');
         const countEl = document.getElementById('resultCount');
         const noResults = document.getElementById('noResults');
-        
-        // Clear existing content
-        grid.innerHTML = '';
-        
-        countEl.textContent = `${recipes.length} recipe${recipes.length !== 1 ? 's' : ''}`;
-
-        // Hide Load More — we load all for client filtering
-        // (Keep container for future server-side pagination upgrade)
         const loadMoreContainer = document.getElementById('loadMoreContainer');
-        loadMoreContainer.classList.add('hidden');
-        
-        if (recipes.length === 0) {
+        const loadMoreStatus = document.getElementById('loadMoreStatus');
+
+        if (!append) grid.innerHTML = '';
+
+        const total = pagination.total || 0;
+        const showing = append ? Math.min(currentPage * PER_PAGE, total) : recipes.length;
+        countEl.textContent = `${total} recipe${total !== 1 ? 's' : ''}`;
+
+        if (total === 0) {
             noResults.classList.remove('hidden');
+            loadMoreContainer.classList.add('hidden');
             return;
         }
-        
         noResults.classList.add('hidden');
-        
+
+        // Show/hide Load More
+        if (pagination.has_next) {
+            loadMoreContainer.classList.remove('hidden');
+            loadMoreStatus.textContent = `Showing ${showing} of ${total}`;
+        } else if (currentPage > 1) {
+            loadMoreContainer.classList.remove('hidden');
+            document.getElementById('loadMoreBtn').classList.add('hidden');
+            loadMoreStatus.textContent = `All ${total} results loaded`;
+        } else {
+            loadMoreContainer.classList.add('hidden');
+        }
+
         recipes.forEach(recipe => {
             const card = document.createElement('a');
             card.href = `/recipe/${escapeHtml(String(recipe.id))}`;
             card.className = 'bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-2xl transition-all duration-300 group block';
-            
-            // Image container
+
             const imageContainer = document.createElement('div');
             imageContainer.className = 'h-48 overflow-hidden relative';
-            
+
             if (recipe.image_path) {
                 const img = document.createElement('img');
                 img.src = `/static/${escapeHtml(recipe.image_path)}`;
@@ -344,8 +323,7 @@
                 placeholder.appendChild(span);
                 imageContainer.appendChild(placeholder);
             }
-            
-            // Difficulty badge
+
             const badge = document.createElement('div');
             badge.className = 'absolute top-3 right-3';
             const badgeSpan = document.createElement('span');
@@ -353,85 +331,62 @@
             badgeSpan.textContent = recipe.difficulty ? (recipe.difficulty.charAt(0).toUpperCase() + recipe.difficulty.slice(1)) : 'Unknown';
             badge.appendChild(badgeSpan);
             imageContainer.appendChild(badge);
-            
             card.appendChild(imageContainer);
-            
-            // Content
+
             const content = document.createElement('div');
             content.className = 'p-5';
-            
-            // Title
+
             const title = document.createElement('h3');
             title.className = 'text-lg font-bold text-gray-900 mb-2 line-clamp-2 group-hover:text-primary-600 transition-colors';
             title.textContent = recipe.title;
             content.appendChild(title);
-            
-            // Time info
+
             const prepTime = recipe.prep_time ? formatTime(recipe.prep_time) : null;
             const cookingTime = recipe.cooking_time ? formatTime(recipe.cooking_time) : null;
-            const totalTime = (recipe.prep_time || recipe.cooking_time) 
+            const totalTime = (recipe.prep_time || recipe.cooking_time)
                 ? formatTime((recipe.prep_time || 0) + (recipe.cooking_time || 0))
                 : null;
-            
+
             if (totalTime) {
                 const timeDiv = document.createElement('div');
                 timeDiv.className = 'flex items-center text-sm text-gray-600 mb-2';
-                timeDiv.innerHTML = `
-                    <svg class="w-4 h-4 mr-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
-                    <span class="font-medium text-gray-700">Total: ${escapeHtml(totalTime)}</span>
-                `;
+                timeDiv.innerHTML = `<svg class="w-4 h-4 mr-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><span class="font-medium text-gray-700">Total: ${escapeHtml(totalTime)}</span>`;
                 content.appendChild(timeDiv);
-                
+
                 if (prepTime || cookingTime) {
                     const breakdownDiv = document.createElement('div');
                     breakdownDiv.className = 'flex items-center gap-3 text-xs text-gray-500 mb-3';
-                    if (prepTime) {
-                        breakdownDiv.innerHTML += `<span class="flex items-center">🥕 Prep: ${escapeHtml(prepTime)}</span>`;
-                    }
-                    if (cookingTime) {
-                        breakdownDiv.innerHTML += `<span class="flex items-center">🔥 Cook: ${escapeHtml(cookingTime)}</span>`;
-                    }
+                    if (prepTime) breakdownDiv.innerHTML += `<span class="flex items-center">🥕 Prep: ${escapeHtml(prepTime)}</span>`;
+                    if (cookingTime) breakdownDiv.innerHTML += `<span class="flex items-center">🔥 Cook: ${escapeHtml(cookingTime)}</span>`;
                     content.appendChild(breakdownDiv);
                 }
             }
-            
-            // Servings
+
             if (recipe.servings) {
                 const servingsDiv = document.createElement('div');
                 servingsDiv.className = 'flex items-center text-sm text-gray-500';
-                servingsDiv.innerHTML = `
-                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
-                    </svg>
-                    <span>${escapeHtml(String(recipe.servings))} servings</span>
-                `;
+                servingsDiv.innerHTML = `<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg><span>${escapeHtml(String(recipe.servings))} servings</span>`;
                 content.appendChild(servingsDiv);
             }
-            
-            // Tags
+
             if (recipe.tags && recipe.tags.length > 0) {
                 const tagsContainer = document.createElement('div');
                 tagsContainer.className = 'flex flex-wrap gap-2 mt-3';
-                
                 recipe.tags.slice(0, 3).forEach(tag => {
                     const tagSpan = document.createElement('span');
                     tagSpan.className = 'px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-md';
                     tagSpan.textContent = tag.name;
                     tagsContainer.appendChild(tagSpan);
                 });
-                
                 if (recipe.tags.length > 3) {
                     const moreSpan = document.createElement('span');
                     moreSpan.className = 'px-2 py-1 text-gray-400 text-xs';
                     moreSpan.textContent = `+${recipe.tags.length - 3}`;
                     tagsContainer.appendChild(moreSpan);
                 }
-                
                 content.appendChild(tagsContainer);
             }
-            
+
             card.appendChild(content);
             grid.appendChild(card);
         });

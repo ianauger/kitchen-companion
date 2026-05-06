@@ -370,15 +370,19 @@ def get_recipes():
     """Get all recipes with optional filtering.
     
     Query Parameters:
-        tag: Filter by tag name
+        tags: Filter by tag names (comma-separated, ALL must match)
         tag_type: Filter by tag type
+        tag_names: Filter by tag names (comma-separated, ANY must match)
         difficulty: Filter by difficulty level
         search: Search recipes by title (case-insensitive partial match)
         max_prep_time: Filter by maximum prep time (minutes)
         max_cooking_time: Filter by maximum cooking time (minutes)
-        max_total_time: Filter by maximum total time (prep + cooking)
+        max_total_time: Filter by maximum total time (prep + cooking, works even
+                        if only one of prep/cooking is set)
+        sort: Sort field — 'title', 'created_at', 'cooking_time', 'difficulty'
+              Prefix with '-' for descending (e.g. '-created_at')
         page: Page number for pagination (default: 1)
-        per_page: Items per page (default: 20, max: 100)
+        per_page: Items per page (default: 20, max: 200)
     
     Returns:
         JSON object with recipes array and pagination info
@@ -396,7 +400,8 @@ def get_recipes():
     per_page = min(request.args.get('per_page', DEFAULT_PER_PAGE, type=int), MAX_PER_PAGE)
     
     # Apply filters if provided
-    tag_name = request.args.get('tag')
+    tag_names_all = request.args.get('tags')     # comma-separated, ALL must match
+    tag_names_any = request.args.get('tag_names') # comma-separated, ANY must match
     tag_type = request.args.get('tag_type')
     difficulty = request.args.get('difficulty')
     search_term = request.args.get('search')
@@ -404,7 +409,29 @@ def get_recipes():
     max_cooking_time = request.args.get('max_cooking_time', type=int)
     max_total_time = request.args.get('max_total_time', type=int)
     
+    # Multi-tag filter — ALL tags must match (intersection)
+    if tag_names_all:
+        tag_list = [t.strip() for t in tag_names_all.split(',') if t.strip()]
+        for t in tag_list:
+            query = query.filter(Recipe.tags.any(
+                db.func.lower(Tag.name) == db.func.lower(t)
+            ))
+    
+    # Multi-tag filter — ANY tag must match (union)
+    if tag_names_any:
+        tag_list = [t.strip() for t in tag_names_any.split(',') if t.strip()]
+        from sqlalchemy import or_
+        tag_filters = [
+            Recipe.tags.any(db.func.lower(Tag.name) == db.func.lower(t))
+            for t in tag_list
+        ]
+        query = query.filter(or_(*tag_filters))
+    
+    # Single tag filter (backwards compat)
+    tag_name = request.args.get('tag')
     if tag_name:
+        query = query.filter(Recipe.tags.any(name=tag_name))
+    if tag_type:
         query = query.filter(Recipe.tags.any(name=tag_name))
     if tag_type:
         query = query.filter(Recipe.tags.any(tag_type=tag_type))
@@ -427,15 +454,29 @@ def get_recipes():
             and_(Recipe.cooking_time.isnot(None), Recipe.cooking_time <= max_cooking_time)
         )
     
-    # Filter by total time - exclude NULL values when filtering
+    # Filter by total time — uses whichever is set (prep, cooking, or both)
     if max_total_time is not None:
+        total_expr = func.coalesce(Recipe.prep_time, 0) + func.coalesce(Recipe.cooking_time, 0)
         query = query.filter(
             and_(
-                Recipe.prep_time.isnot(None),
-                Recipe.cooking_time.isnot(None),
-                (Recipe.prep_time + Recipe.cooking_time) <= max_total_time
+                db.or_(Recipe.prep_time.isnot(None), Recipe.cooking_time.isnot(None)),
+                total_expr <= max_total_time
             )
         )
+    
+    # Apply sorting
+    sort = request.args.get('sort', '-created_at')
+    sort_desc = sort.startswith('-')
+    sort_field = sort[1:] if sort_desc else sort
+    sort_columns = {
+        'title': Recipe.title,
+        'created_at': Recipe.created_at,
+        'cooking_time': Recipe.cooking_time,
+        'difficulty': Recipe.difficulty,
+    }
+    if sort_field in sort_columns:
+        col = sort_columns[sort_field]
+        query = query.order_by(col.desc() if sort_desc else col.asc())
     
     # Apply pagination
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
