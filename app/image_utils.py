@@ -140,10 +140,11 @@ def download_image(image_url, recipe_id=None):
         recipe_id: Optional recipe ID to include in the filename
     
     Returns:
-        tuple: (local_relative_path, absolute_path) or (None, None) on failure
-        
-    The local_relative_path is suitable for use in url_for('static', filename=...)
-    The absolute_path is the full filesystem path
+        tuple: (local_relative_path, absolute_path_str) on success,
+               or (None, None) on any failure (invalid URL, download error,
+               size exceeded, or I/O error).
+        local_relative_path is suitable for use in url_for('static', filename=...)
+        absolute_path_str is the full filesystem path as a string.
     """
     if not image_url:
         return None, None

@@ -205,7 +205,7 @@ def update_recipe_submit(recipe_id):
     
     recipe = Recipe.query.get_or_404(recipe_id)
     
-    # Validate required fields
+    # Validate and extract required fields
     title = request.form.get('title', '').strip()
     instructions = request.form.get('instructions', '').strip()
     
@@ -216,14 +216,9 @@ def update_recipe_submit(recipe_id):
         flash('Instructions is required', 'error')
         return redirect(url_for('main.edit_recipe_form', recipe_id=recipe_id))
     
-    # Update fields only if provided in the request
-    title = request.form.get('title', '').strip()
-    if title:
-        recipe.title = title
-    
-    instructions = request.form.get('instructions', '').strip()
-    if instructions:
-        recipe.instructions = instructions
+    # Update fields — required fields already validated above
+    recipe.title = title
+    recipe.instructions = instructions
     
     ingredients = request.form.get('ingredients', '').strip()
     if ingredients:
