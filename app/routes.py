@@ -330,10 +330,17 @@ def save_uploaded_image(file, recipe_id):
     if not file.filename:
         return None, "No file selected"
     
-    # Get file extension
+    # Get file extension — use only the FINAL suffix to prevent double-extension tricks
+    # (e.g. evil.php.jpg → .jpg; evil.jpg.php → .php, which will be rejected)
     ext = Path(file.filename).suffix.lower()
     if ext not in allowed_extensions:
-        return None, f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
+        return None, f"Invalid file type. Allowed: {', '.join(sorted(allowed_extensions))}"
+    
+    # Extra: ensure no additional extensions are hiding (e.g. evil.php.jpg has stem evil.php)
+    stem = Path(file.filename).stem
+    if '.' in stem:
+        # Strip the fake inner extension — rewrite to just use ext with a safe name
+        pass  # filename is fully replaced below, so this is informational only
     
     # Generate filename
     filename = f'recipe_{recipe_id}_{uuid.uuid4().hex[:8]}{ext}'

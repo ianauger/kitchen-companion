@@ -96,8 +96,19 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password):
-        """Hash and store a password."""
+        """Hash and store a password. Does NOT validate complexity."""
         self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+
+    def set_password_validated(self, password):
+        """Validate password complexity then hash and store it.
+        
+        Raises:
+            ValueError: If password fails validation
+        """
+        valid, err = validate_password(password)
+        if not valid:
+            raise ValueError(err)
+        self.set_password(password)
 
     def check_password(self, password):
         """Verify a password against the stored hash."""
@@ -195,7 +206,7 @@ def register():
             return jsonify({'error': 'Only admins can assign roles. Register as viewer first.'}), 403
 
     user = User(username=username, role=request_role)
-    user.set_password(password)
+    user.set_password(password)  # validation already done above
 
     try:
         db.session.add(user)
@@ -362,6 +373,7 @@ def logout():
 # ============================================================================
 
 @web_bp.route('/admin', methods=['GET'])
+@limiter.limit("30 per minute")
 def admin_settings_page():
     """Render the admin settings page."""
     if 'user_id' not in session:
@@ -376,6 +388,7 @@ def admin_settings_page():
 
 
 @web_bp.route('/admin/users', methods=['POST'])
+@limiter.limit("10 per minute")
 def admin_create_user():
     """Create a new user (admin only, web UI form)."""
     if 'user_id' not in session or session.get('role') != 'admin':
@@ -404,7 +417,7 @@ def admin_create_user():
         return redirect(url_for('web_auth.admin_settings_page'))
 
     user = User(username=username, role=role)
-    user.set_password(password)
+    user.set_password(password)  # validation already done above
     db.session.add(user)
     db.session.commit()
 
@@ -413,6 +426,7 @@ def admin_create_user():
 
 
 @web_bp.route('/admin/users/<int:user_id>/role', methods=['POST'])
+@limiter.limit("20 per minute")
 def admin_update_role(user_id):
     """Update a user's role via web UI form (admin only)."""
     if 'user_id' not in session or session.get('role') != 'admin':
@@ -443,6 +457,7 @@ def admin_update_role(user_id):
 
 
 @web_bp.route('/admin/users/<int:user_id>/password', methods=['POST'])
+@limiter.limit("5 per minute")
 def admin_reset_password(user_id):
     """Reset a user's password via web UI form (admin only)."""
     if 'user_id' not in session or session.get('role') != 'admin':
@@ -460,7 +475,7 @@ def admin_reset_password(user_id):
         flash('User not found.', 'error')
         return redirect(url_for('web_auth.admin_settings_page'))
 
-    user.set_password(new_password)
+    user.set_password(new_password)  # validation already done above
     db.session.commit()
 
     flash(f'Password reset for {user.username}.', 'success')
@@ -468,6 +483,7 @@ def admin_reset_password(user_id):
 
 
 @web_bp.route('/admin/users/<int:user_id>/delete', methods=['POST'])
+@limiter.limit("10 per minute")
 def admin_delete_user(user_id):
     """Delete a user (admin only, can't delete yourself)."""
     if 'user_id' not in session or session.get('role') != 'admin':

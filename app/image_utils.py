@@ -271,9 +271,11 @@ def delete_image(image_path):
         absolute_path = Path(current_app.static_folder) / image_path
         
         # Security: Ensure the resolved path is within the static folder
+        # Use is_relative_to for correct path containment (str.startswith is vulnerable
+        # to prefix collisions e.g. /app/static-evil starts with /app/static)
         resolved_path = absolute_path.resolve()
         resolved_static = Path(current_app.static_folder).resolve()
-        if not str(resolved_path).startswith(str(resolved_static)):
+        if not resolved_path.is_relative_to(resolved_static):
             current_app.logger.warning(f'Blocked path escape attempt: {image_path}')
             return False
         
