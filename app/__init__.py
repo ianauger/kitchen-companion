@@ -46,7 +46,7 @@ def create_app(config_name='default'):
     
     # Import blueprints
     from app.routes import api_bp, main_bp
-    from app.auth import auth_bp, bcrypt
+    from app.auth import auth_bp, web_bp, bcrypt
     
     # API routes use JWT Bearer tokens, exempt from CSRF
     csrf.exempt(api_bp)
@@ -59,5 +59,6 @@ def create_app(config_name='default'):
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp, url_prefix='/api')
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    app.register_blueprint(web_bp, url_prefix='/api/auth')
     
     return app

@@ -10,6 +10,7 @@ from flask_bcrypt import Bcrypt
 from app import db, limiter
 
 auth_bp = Blueprint('auth', __name__)
+web_bp = Blueprint('web_auth', __name__)
 bcrypt = Bcrypt()
 
 
@@ -23,7 +24,7 @@ def login_required_web(fn):
     def wrapper(*args, **kwargs):
         if 'user_id' not in session:
             flash('Please log in to access this page.', 'warning')
-            return redirect(url_for('auth.login_page', next=request.path))
+            return redirect(url_for('web_auth.login_page', next=request.path))
         return fn(*args, **kwargs)
     return wrapper
 
@@ -34,7 +35,7 @@ def admin_required_web(fn):
     def wrapper(*args, **kwargs):
         if 'user_id' not in session:
             flash('Please log in to access this page.', 'warning')
-            return redirect(url_for('auth.login_page', next=request.path))
+            return redirect(url_for('web_auth.login_page', next=request.path))
         if session.get('role') != 'admin':
             flash('Admin access required.', 'error')
             return redirect(url_for('main.index'))
@@ -48,7 +49,7 @@ def editor_or_admin_web(fn):
     def wrapper(*args, **kwargs):
         if 'user_id' not in session:
             flash('Please log in to access this page.', 'warning')
-            return redirect(url_for('auth.login_page', next=request.path))
+            return redirect(url_for('web_auth.login_page', next=request.path))
         if session.get('role') not in ('editor', 'admin'):
             flash('You do not have permission to perform this action.', 'error')
             return redirect(url_for('main.index'))
@@ -187,17 +188,24 @@ def register():
     if request_role not in User.VALID_ROLES:
         return jsonify({'error': f'Invalid role. Must be one of: {User.VALID_ROLES}'}), 400
 
-    # If requesting non-viewer role, must be authenticated as admin
+    # If requesting non-viewer role, only allow when no users exist (first-user bootstrap)
+    # Use INSERT with a unique constraint check to prevent TOCTOU race
     if request_role != 'viewer':
-        # Check for existing admin-created users; allow first-user to be admin
         if User.query.count() > 0:
             return jsonify({'error': 'Only admins can assign roles. Register as viewer first.'}), 403
 
     user = User(username=username, role=request_role)
     user.set_password(password)
 
-    db.session.add(user)
-    db.session.commit()
+    try:
+        db.session.add(user)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        # If commit fails (e.g. duplicate username from race), return conflict
+        if User.query.filter(db.func.lower(User.username) == db.func.lower(username)).first():
+            return jsonify({'error': 'Username already taken'}), 409
+        return jsonify({'error': 'Registration failed'}), 500
 
     return jsonify(user.to_dict()), 201
 
@@ -268,55 +276,51 @@ def list_users():
 
 
 @auth_bp.route('/users/<int:user_id>/role', methods=['PUT'])
+@jwt_required()
 def update_user_role(user_id):
     """Update a user's role (admin only).
     
     Request Body (JSON):
         role: New role (admin, editor, viewer)
     """
-    @wraps(update_user_role)
-    @jwt_required()
-    def _update(user_id):
-        claims = get_jwt()
-        if claims.get('role') != 'admin':
-            return jsonify({'error': 'Admin access required'}), 403
+    claims = get_jwt()
+    if claims.get('role') != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
 
-        data = request.get_json()
-        if not data or 'role' not in data:
-            return jsonify({'error': 'Role is required'}), 400
+    data = request.get_json()
+    if not data or 'role' not in data:
+        return jsonify({'error': 'Role is required'}), 400
 
-        new_role = data['role']
-        if new_role not in User.VALID_ROLES:
-            return jsonify({'error': f'Invalid role. Must be one of: {User.VALID_ROLES}'}), 400
+    new_role = data['role']
+    if new_role not in User.VALID_ROLES:
+        return jsonify({'error': f'Invalid role. Must be one of: {User.VALID_ROLES}'}), 400
 
-        user = User.query.get(user_id)
-        if user is None:
-            return jsonify({'error': 'User not found'}), 404
+    user = db.session.get(User, user_id)
+    if user is None:
+        return jsonify({'error': 'User not found'}), 404
 
-        # Prevent admin from demoting themselves
-        if user.id == int(get_jwt_identity()) and new_role != 'admin':
-            return jsonify({'error': 'Cannot change your own role'}), 400
+    # Prevent admin from demoting themselves
+    if user.id == int(get_jwt_identity()) and new_role != 'admin':
+        return jsonify({'error': 'Cannot change your own role'}), 400
 
-        user.role = new_role
-        db.session.commit()
+    user.role = new_role
+    db.session.commit()
 
-        return jsonify(user.to_dict()), 200
-
-    return _update(user_id)
+    return jsonify(user.to_dict()), 200
 
 
 # ============================================================================
 # Web UI Auth Routes
 # ============================================================================
 
-@auth_bp.route('/signin', methods=['GET'])
+@web_bp.route('/signin', methods=['GET'])
 def login_page():
     """Render the login page."""
     next_page = request.args.get('next', url_for('main.index'))
     return render_template('login.html', next=next_page)
 
 
-@auth_bp.route('/signin', methods=['POST'])
+@web_bp.route('/signin', methods=['POST'])
 @limiter.limit("10 per minute")
 def login_submit():
     """Process login form submission for web UI."""
@@ -326,7 +330,7 @@ def login_submit():
 
     if not username or not password:
         flash('Username and password are required.', 'error')
-        return redirect(url_for('auth.login_page', next=next_page))
+        return redirect(url_for('web_auth.login_page', next=next_page))
 
     user = User.query.filter(
         db.func.lower(User.username) == db.func.lower(username)
@@ -334,7 +338,7 @@ def login_submit():
 
     if user is None or not user.check_password(password):
         flash('Invalid username or password.', 'error')
-        return redirect(url_for('auth.login_page', next=next_page))
+        return redirect(url_for('web_auth.login_page', next=next_page))
 
     session['user_id'] = user.id
     session['username'] = user.username
@@ -345,7 +349,7 @@ def login_submit():
     return redirect(next_page)
 
 
-@auth_bp.route('/logout', methods=['POST'])
+@web_bp.route('/logout', methods=['POST'])
 def logout():
     """Log out of the web UI."""
     session.clear()
@@ -357,12 +361,12 @@ def logout():
 # Admin Settings Web UI
 # ============================================================================
 
-@auth_bp.route('/admin', methods=['GET'])
+@web_bp.route('/admin', methods=['GET'])
 def admin_settings_page():
     """Render the admin settings page."""
     if 'user_id' not in session:
         flash('Please log in to access this page.', 'warning')
-        return redirect(url_for('auth.login_page', next=request.path))
+        return redirect(url_for('web_auth.login_page', next=request.path))
     if session.get('role') != 'admin':
         flash('Admin access required.', 'error')
         return redirect(url_for('main.index'))
@@ -371,7 +375,7 @@ def admin_settings_page():
     return render_template('admin_settings.html', users=users)
 
 
-@auth_bp.route('/admin/users', methods=['POST'])
+@web_bp.route('/admin/users', methods=['POST'])
 def admin_create_user():
     """Create a new user (admin only, web UI form)."""
     if 'user_id' not in session or session.get('role') != 'admin':
@@ -384,20 +388,20 @@ def admin_create_user():
 
     if not username or len(username) < 3 or len(username) > 64:
         flash('Username must be 3-64 characters.', 'error')
-        return redirect(url_for('auth.admin_settings_page'))
+        return redirect(url_for('web_auth.admin_settings_page'))
 
     valid, err = validate_password(password)
     if not valid:
         flash(err, 'error')
-        return redirect(url_for('auth.admin_settings_page'))
+        return redirect(url_for('web_auth.admin_settings_page'))
 
     if role not in User.VALID_ROLES:
         flash('Invalid role selected.', 'error')
-        return redirect(url_for('auth.admin_settings_page'))
+        return redirect(url_for('web_auth.admin_settings_page'))
 
     if User.query.filter(db.func.lower(User.username) == db.func.lower(username)).first():
         flash('Username already taken.', 'error')
-        return redirect(url_for('auth.admin_settings_page'))
+        return redirect(url_for('web_auth.admin_settings_page'))
 
     user = User(username=username, role=role)
     user.set_password(password)
@@ -405,10 +409,10 @@ def admin_create_user():
     db.session.commit()
 
     flash(f'User {username} created successfully!', 'success')
-    return redirect(url_for('auth.admin_settings_page'))
+    return redirect(url_for('web_auth.admin_settings_page'))
 
 
-@auth_bp.route('/admin/users/<int:user_id>/role', methods=['POST'])
+@web_bp.route('/admin/users/<int:user_id>/role', methods=['POST'])
 def admin_update_role(user_id):
     """Update a user's role via web UI form (admin only)."""
     if 'user_id' not in session or session.get('role') != 'admin':
@@ -418,27 +422,27 @@ def admin_update_role(user_id):
     new_role = request.form.get('role', '')
     if new_role not in User.VALID_ROLES:
         flash('Invalid role.', 'error')
-        return redirect(url_for('auth.admin_settings_page'))
+        return redirect(url_for('web_auth.admin_settings_page'))
 
     user = User.query.get(user_id)
     if user is None:
         flash('User not found.', 'error')
-        return redirect(url_for('auth.admin_settings_page'))
+        return redirect(url_for('web_auth.admin_settings_page'))
 
     # Prevent admin from demoting themselves
     if user.id == session['user_id'] and new_role != 'admin':
         flash('Cannot change your own role.', 'error')
-        return redirect(url_for('auth.admin_settings_page'))
+        return redirect(url_for('web_auth.admin_settings_page'))
 
     old_role = user.role
     user.role = new_role
     db.session.commit()
 
     flash(f"{user.username}'s role changed from {old_role} to {new_role}.", 'success')
-    return redirect(url_for('auth.admin_settings_page'))
+    return redirect(url_for('web_auth.admin_settings_page'))
 
 
-@auth_bp.route('/admin/users/<int:user_id>/password', methods=['POST'])
+@web_bp.route('/admin/users/<int:user_id>/password', methods=['POST'])
 def admin_reset_password(user_id):
     """Reset a user's password via web UI form (admin only)."""
     if 'user_id' not in session or session.get('role') != 'admin':
@@ -449,21 +453,21 @@ def admin_reset_password(user_id):
     valid, err = validate_password(new_password)
     if not valid:
         flash(err, 'error')
-        return redirect(url_for('auth.admin_settings_page'))
+        return redirect(url_for('web_auth.admin_settings_page'))
 
     user = User.query.get(user_id)
     if user is None:
         flash('User not found.', 'error')
-        return redirect(url_for('auth.admin_settings_page'))
+        return redirect(url_for('web_auth.admin_settings_page'))
 
     user.set_password(new_password)
     db.session.commit()
 
     flash(f'Password reset for {user.username}.', 'success')
-    return redirect(url_for('auth.admin_settings_page'))
+    return redirect(url_for('web_auth.admin_settings_page'))
 
 
-@auth_bp.route('/admin/users/<int:user_id>/delete', methods=['POST'])
+@web_bp.route('/admin/users/<int:user_id>/delete', methods=['POST'])
 def admin_delete_user(user_id):
     """Delete a user (admin only, can't delete yourself)."""
     if 'user_id' not in session or session.get('role') != 'admin':
@@ -472,16 +476,16 @@ def admin_delete_user(user_id):
 
     if user_id == session['user_id']:
         flash('Cannot delete your own account.', 'error')
-        return redirect(url_for('auth.admin_settings_page'))
+        return redirect(url_for('web_auth.admin_settings_page'))
 
     user = User.query.get(user_id)
     if user is None:
         flash('User not found.', 'error')
-        return redirect(url_for('auth.admin_settings_page'))
+        return redirect(url_for('web_auth.admin_settings_page'))
 
     username = user.username
     db.session.delete(user)
     db.session.commit()
 
     flash(f'User {username} deleted.', 'success')
-    return redirect(url_for('auth.admin_settings_page'))
+    return redirect(url_for('web_auth.admin_settings_page'))

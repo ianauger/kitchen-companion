@@ -36,6 +36,9 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
     # Session settings (web UI)
     PERMANENT_SESSION_LIFETIME = timedelta(hours=12)
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
 
 
 class DevelopmentConfig(Config):
@@ -53,6 +56,8 @@ class ProductionConfig(Config):
     def __init__(self):
         if not os.environ.get('SECRET_KEY'):
             raise ValueError("SECRET_KEY must be set in production")
+        if not os.environ.get('JWT_SECRET_KEY'):
+            raise ValueError("JWT_SECRET_KEY must be set in production")
 
 
 config_by_name = {

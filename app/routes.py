@@ -806,6 +806,7 @@ def get_recipe_notes(recipe_id):
 
 @api_bp.route('/recipes/<int:recipe_id>/notes', methods=['POST'])
 @limiter.limit("30 per minute")
+@editor_or_admin
 def create_note(recipe_id):
     """Create a new note for a recipe.
     
