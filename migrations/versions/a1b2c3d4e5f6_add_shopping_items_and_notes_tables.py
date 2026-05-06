@@ -17,29 +17,34 @@ depends_on = None
 
 
 def upgrade():
-    # Create shopping_items table
-    op.create_table(
-        'shopping_items',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('name', sa.String(length=500), nullable=False),
-        sa.Column('recipe_id', sa.Integer(), sa.ForeignKey('recipes.id'), nullable=True),
-        sa.Column('purchased', sa.Boolean(), nullable=False, server_default=sa.text('0')),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index(op.f('ix_shopping_items_purchased'), 'shopping_items', ['purchased'], unique=False)
+    # Create shopping_items table (if not exists)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS shopping_items (
+            id INTEGER NOT NULL,
+            name VARCHAR(500) NOT NULL,
+            recipe_id INTEGER,
+            purchased BOOLEAN DEFAULT 0 NOT NULL,
+            created_at DATETIME,
+            updated_at DATETIME,
+            PRIMARY KEY (id),
+            FOREIGN KEY(recipe_id) REFERENCES recipes (id)
+        )
+    """)
+    # Create index if not exists (SQLite will ignore duplicates)
+    op.execute('CREATE INDEX IF NOT EXISTS ix_shopping_items_purchased ON shopping_items (purchased)')
 
-    # Create notes table
-    op.create_table(
-        'notes',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('recipe_id', sa.Integer(), sa.ForeignKey('recipes.id'), nullable=False),
-        sa.Column('content', sa.Text(), nullable=False),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
+    # Create notes table (if not exists)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS notes (
+            id INTEGER NOT NULL,
+            recipe_id INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            created_at DATETIME,
+            updated_at DATETIME,
+            PRIMARY KEY (id),
+            FOREIGN KEY(recipe_id) REFERENCES recipes (id)
+        )
+    """)
 
 
 def downgrade():
