@@ -3,7 +3,7 @@ from flask import Blueprint, request, jsonify, render_template, redirect, url_fo
 from werkzeug.utils import secure_filename
 from app import db, limiter
 from app.models import Recipe, Tag, Note, ShoppingItem
-from app.auth import editor_or_admin, admin_required
+from app.auth import editor_or_admin, admin_required, login_required_web, editor_or_admin_web
 from app.image_utils import download_image, delete_image, validate_url, get_upload_dir
 from config import (
     MAX_NOTE_LENGTH, MAX_TAG_NAME_LENGTH,
@@ -85,6 +85,7 @@ def features():
 # ============================================================================
 
 @main_bp.route('/recipes/new', methods=['GET'])
+@login_required_web
 def create_recipe_form():
     """Render the form for creating a new recipe."""
     # Get all tags grouped by type for the tag selector
@@ -96,6 +97,7 @@ def create_recipe_form():
 
 
 @main_bp.route('/recipes/<int:recipe_id>/edit', methods=['GET'])
+@login_required_web
 def edit_recipe_form(recipe_id):
     """Render the form for editing an existing recipe."""
     recipe = Recipe.query.options(
@@ -119,6 +121,7 @@ def edit_recipe_form(recipe_id):
 
 @main_bp.route('/recipes', methods=['POST'])
 @limiter.limit("10 per minute")
+@editor_or_admin_web
 def create_recipe_submit():
     """Handle form submission for creating a new recipe."""
     from flask import current_app
@@ -195,6 +198,7 @@ def create_recipe_submit():
 
 @main_bp.route('/recipes/<int:recipe_id>', methods=['POST'])
 @limiter.limit("10 per minute")
+@editor_or_admin_web
 def update_recipe_submit(recipe_id):
     """Handle form submission for updating an existing recipe."""
     from flask import current_app

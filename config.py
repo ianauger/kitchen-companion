@@ -34,6 +34,8 @@ class Config:
     
     # JWT settings
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
+    # Session settings (web UI)
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=12)
 
 
 class DevelopmentConfig(Config):

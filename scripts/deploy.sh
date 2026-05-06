@@ -1,131 +1,50 @@
 #!/bin/bash
 # ============================================================================
-# Sous Chef Deploy Script
+# Sous Chef Deploy — run as kukie on sous-chef CT
+# Assumes: docker-compose.yml and .env are next to this script (or in CWD)
 # ============================================================================
-# Performs a safe deploy with backup, migration, and rollback capability.
-#
-# Usage:
-#   ./scripts/deploy.sh [--skip-backup] [--skip-migrate]
-#
-# Requires: docker, docker-compose on the target host
-# Run as: root or user with docker permissions
-# ============================================================================
+set -e
 
-set -euo pipefail
-
-COMPOSE_DIR="/root/kitchen-companion"
-COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
-BACKUP_DIR="${COMPOSE_DIR}/backups"
-CONTAINER="kitchen-companion"
-IMAGE="ghcr.io/ianauger/kitchen-companion:latest"
-DB_PATH="/app/instance/kitchen_companion.db"
-
-SKIP_BACKUP=false
-SKIP_MIGRATE=false
-
-for arg in "$@"; do
-    case "$arg" in
-        --skip-backup) SKIP_BACKUP=true ;;
-        --skip-migrate) SKIP_MIGRATE=true ;;
-    esac
-done
+# Resolve the directory this script lives in (so paths work from anywhere)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# If docker-compose.yml is in the project root (one level up from scripts/), use that
+if [ -f "$SCRIPT_DIR/../docker-compose.yml" ]; then
+  COMPOSE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+  COMPOSE_DIR="$SCRIPT_DIR"
+fi
 
 echo "=== Sous Chef Deploy ==="
-echo "Image: $IMAGE"
-echo "Backup: $([ "$SKIP_BACKUP" = true ] && echo 'SKIPPED' || echo 'enabled')"
-echo "Migrate: $([ "$SKIP_MIGRATE" = true ] && echo 'SKIPPED' || echo 'enabled')"
-echo
 
-# --------------------------------------------------------------------------
-# 1. Backup database
-# --------------------------------------------------------------------------
-if [ "$SKIP_BACKUP" = false ]; then
-    echo "→ Backing up database..."
-    mkdir -p "$BACKUP_DIR"
-    
-    BACKUP_FILE="${BACKUP_DIR}/kitchen_companion_$(date +%Y%m%d_%H%M%S).db"
-    
-    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
-        docker cp "${CONTAINER}:${DB_PATH}" "$BACKUP_FILE" 2>/dev/null && \
-            echo "  ✓ Backup saved: $BACKUP_FILE" || \
-            echo "  ⚠ No existing DB to back up (fresh deploy)"
-    else
-        # Container not running — check for stopped container
-        STOPPED=$(docker ps -a --format '{{.Names}}' | grep "^${CONTAINER}$" || true)
-        if [ -n "$STOPPED" ]; then
-            docker cp "${CONTAINER}:${DB_PATH}" "$BACKUP_FILE" 2>/dev/null && \
-                echo "  ✓ Backup saved from stopped container: $BACKUP_FILE" || \
-                echo "  ⚠ Could not copy DB from stopped container"
-        else
-            echo "  ⚠ No container found, skipping backup"
-        fi
-    fi
-    
-    # Keep only last 10 backups
-    ls -t "${BACKUP_DIR}"/*.db 2>/dev/null | tail -n +11 | xargs rm -f 2>/dev/null || true
-else
-    echo "→ Backup skipped"
-fi
+echo "→ Pulling latest image..."
+docker pull ghcr.io/ianauger/kitchen-companion:latest
 
-# --------------------------------------------------------------------------
-# 2. Pull latest image
-# --------------------------------------------------------------------------
-echo "→ Pulling $IMAGE..."
-docker pull "$IMAGE"
+echo "→ Backing up database..."
+mkdir -p ~/backups
+docker cp kitchen-companion:/app/instance/kitchen_companion.db \
+  ~/backups/kitchen_companion_$(date +%Y%m%d_%H%M%S).db 2>/dev/null || \
+  echo "  No existing DB to back up"
+# Keep only the 10 most recent backups
+ls -t ~/backups/*.db 2>/dev/null | tail -n +11 | xargs rm -f 2>/dev/null || true
 
-# --------------------------------------------------------------------------
-# 3. Recreate container with new image
-# --------------------------------------------------------------------------
-echo "→ Restarting container..."
-docker rm -f "$CONTAINER" 2>/dev/null || true
+echo "→ Redeploying container..."
+docker rm -f kitchen-companion 2>/dev/null || true
+docker compose -f "$COMPOSE_DIR/docker-compose.yml" \
+  --env-file "$COMPOSE_DIR/.env" up -d
 
-cd "$COMPOSE_DIR"
-docker compose -f "$COMPOSE_FILE" up -d
-
-# Wait for healthy
-echo "→ Waiting for container to be ready..."
+echo "→ Waiting for healthy..."
 for i in $(seq 1 15); do
-    if curl -sf http://localhost:5000/ > /dev/null 2>&1; then
-        echo "  ✓ Container healthy"
-        break
-    fi
-    sleep 2
-    if [ "$i" -eq 15 ]; then
-        echo "  ✗ Container failed to become healthy"
-        echo "  Logs:"
-        docker logs --tail 30 "$CONTAINER"
-        exit 1
-    fi
+  curl -sf http://localhost:5000/ > /dev/null 2>&1 && break
+  sleep 2
 done
+curl -sf http://localhost:5000/ > /dev/null 2>&1 && echo "  ✓ Container healthy" || echo "  ⚠ Health check timed out"
 
-# --------------------------------------------------------------------------
-# 4. Run migrations
-# --------------------------------------------------------------------------
-if [ "$SKIP_MIGRATE" = false ]; then
-    echo "→ Running database migrations..."
-    docker exec "$CONTAINER" flask db upgrade 2>&1 | tail -5 || {
-        echo "  ✗ Migration failed!"
-        echo "  Restore backup with: docker cp ${BACKUP_FILE} ${CONTAINER}:${DB_PATH}"
-        exit 1
-    }
-    echo "  ✓ Migrations complete"
-else
-    echo "→ Migrations skipped"
-fi
+echo "→ Running migrations..."
+docker exec kitchen-companion flask db upgrade
 
-# --------------------------------------------------------------------------
-# 5. Verify
-# --------------------------------------------------------------------------
-echo "→ Verifying API..."
-HEALTH=$(curl -s http://localhost:5000/api/recipes?per_page=1)
-if echo "$HEALTH" | grep -q '"recipes"'; then
-    TOTAL=$(echo "$HEALTH" | python3 -c "import json,sys; print(json.load(sys.stdin)['pagination']['total'])" 2>/dev/null || echo "?")
-    echo "  ✓ API healthy — $TOTAL recipes in DB"
-else
-    echo "  ✗ API check failed"
-    docker logs --tail 10 "$CONTAINER"
-    exit 1
-fi
+echo "→ Verifying..."
+RECIPES=$(curl -s http://localhost:5000/api/recipes?per_page=1 | \
+  python3 -c "import json,sys; print(json.load(sys.stdin)['pagination']['total'])" 2>/dev/null || echo "?")
+echo "  ✓ $RECIPES recipes in database"
 
-echo
 echo "=== Deploy complete ==="
