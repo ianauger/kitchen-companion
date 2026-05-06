@@ -24,6 +24,17 @@ api_bp = Blueprint('api', __name__)
 # Main Page Routes
 # ============================================================================
 
+@main_bp.route('/health')
+def health():
+    """Healthcheck endpoint for container orchestration."""
+    try:
+        # Verify DB connectivity
+        db.session.execute(db.text('SELECT 1'))
+        return jsonify({'status': 'healthy'}), 200
+    except Exception:
+        return jsonify({'status': 'unhealthy'}), 503
+
+
 @main_bp.route('/')
 def index():
     """Render the home page with a random selection of 6 recipes."""

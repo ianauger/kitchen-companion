@@ -39,6 +39,11 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH"
 
+# Install curl for healthcheck support
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+
 # Create non-root user for security
 RUN groupadd -r appuser && \
     useradd -r -g appuser -d /app -s /sbin/nologin -c "Kitchen Companion app user" appuser
