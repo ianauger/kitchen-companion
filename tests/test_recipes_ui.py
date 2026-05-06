@@ -5,9 +5,9 @@ from app import db
 import io
 
 
-def test_create_recipe_form_page(client):
-    """Test that the create recipe form page loads correctly."""
-    response = client.get('/recipes/new')
+def test_create_recipe_form_page(auth_client):
+    """Test that the create recipe form page loads correctly when authenticated."""
+    response = auth_client.get('/recipes/new')
     assert response.status_code == 200
     assert b'Create New Recipe' in response.data
     assert b'Recipe Title' in response.data
@@ -15,9 +15,16 @@ def test_create_recipe_form_page(client):
     assert b'Create Recipe' in response.data
 
 
-def test_create_recipe_form_submission(client, db_session):
+def test_create_recipe_form_redirects_unauthenticated(client):
+    """Test that create recipe form redirects to login when not authenticated."""
+    response = client.get('/recipes/new')
+    assert response.status_code == 302
+    assert '/api/auth/signin' in response.location
+
+
+def test_create_recipe_form_submission(auth_client, db_session):
     """Test creating a recipe through the web form."""
-    response = client.post('/recipes', data={
+    response = auth_client.post('/recipes', data={
         'title': 'Test Spaghetti',
         'instructions': 'Boil pasta, add sauce, serve.',
         'ingredients': '- Pasta\n- Sauce',
@@ -47,9 +54,9 @@ def test_create_recipe_form_submission(client, db_session):
     assert 'Quick' in tag_names
 
 
-def test_create_recipe_missing_title(client, db_session):
+def test_create_recipe_missing_title(auth_client, db_session):
     """Test that form validation fails without title."""
-    response = client.post('/recipes', data={
+    response = auth_client.post('/recipes', data={
         'instructions': 'Boil pasta, add sauce, serve.'
     }, follow_redirects=True)
     
@@ -62,9 +69,9 @@ def test_create_recipe_missing_title(client, db_session):
     assert len(recipes) == 0
 
 
-def test_create_recipe_missing_instructions(client, db_session):
+def test_create_recipe_missing_instructions(auth_client, db_session):
     """Test that form validation fails without instructions."""
-    response = client.post('/recipes', data={
+    response = auth_client.post('/recipes', data={
         'title': 'Test Recipe'
     }, follow_redirects=True)
     
@@ -76,7 +83,7 @@ def test_create_recipe_missing_instructions(client, db_session):
     assert recipe is None
 
 
-def test_edit_recipe_form_page(client, db_session):
+def test_edit_recipe_form_page(auth_client, db_session):
     """Test that the edit recipe form page loads with pre-populated data."""
     # Create a recipe
     recipe = Recipe(
@@ -91,7 +98,7 @@ def test_edit_recipe_form_page(client, db_session):
     db_session.add(recipe)
     db_session.commit()
     
-    response = client.get(f'/recipes/{recipe.id}/edit')
+    response = auth_client.get(f'/recipes/{recipe.id}/edit')
     assert response.status_code == 200
     assert b'Edit Recipe' in response.data
     assert b'Original Title' in response.data
@@ -99,7 +106,7 @@ def test_edit_recipe_form_page(client, db_session):
     assert b'Update Recipe' in response.data
 
 
-def test_edit_recipe_form_submission(client, db_session):
+def test_edit_recipe_form_submission(auth_client, db_session):
     """Test updating a recipe through the web form."""
     # Create initial recipe
     recipe = Recipe(
@@ -111,7 +118,7 @@ def test_edit_recipe_form_submission(client, db_session):
     db_session.add(recipe)
     db_session.commit()
     
-    response = client.post(f'/recipes/{recipe.id}', data={
+    response = auth_client.post(f'/recipes/{recipe.id}', data={
         'title': 'Updated Title',
         'instructions': 'Updated instructions.',
         'ingredients': 'Updated ingredients',
@@ -141,13 +148,13 @@ def test_edit_recipe_form_submission(client, db_session):
     assert 'New Tag' in tag_names
 
 
-def test_edit_recipe_not_found(client):
+def test_edit_recipe_not_found(auth_client):
     """Test that editing a non-existent recipe returns 404."""
-    response = client.get('/recipes/99999/edit')
+    response = auth_client.get('/recipes/99999/edit')
     assert response.status_code == 404
 
 
-def test_edit_recipe_remove_tags(client, db_session):
+def test_edit_recipe_remove_tags(auth_client, db_session):
     """Test that tags can be removed from a recipe."""
     # Create recipe with tags
     recipe = Recipe(
@@ -163,7 +170,7 @@ def test_edit_recipe_remove_tags(client, db_session):
     db_session.commit()
     
     # Update with empty tags
-    response = client.post(f'/recipes/{recipe.id}', data={
+    response = auth_client.post(f'/recipes/{recipe.id}', data={
         'title': 'Tagged Recipe',
         'instructions': 'Some instructions.',
         'tags': ''
@@ -176,7 +183,7 @@ def test_edit_recipe_remove_tags(client, db_session):
     assert len(updated_recipe.tags) == 0
 
 
-def test_create_recipe_with_image_url(client, db_session, mocker):
+def test_create_recipe_with_image_url(auth_client, db_session, mocker):
     """Test creating a recipe with an image URL."""
     # Mock the image download function
     mock_download = mocker.patch('app.routes.download_image')
@@ -185,7 +192,7 @@ def test_create_recipe_with_image_url(client, db_session, mocker):
     mock_validate = mocker.patch('app.routes.validate_url')
     mock_validate.return_value = (True, None)
     
-    response = client.post('/recipes', data={
+    response = auth_client.post('/recipes', data={
         'title': 'Recipe with Image',
         'instructions': 'Test instructions.',
         'image_url': 'https://example.com/image.jpg'
@@ -203,13 +210,13 @@ def test_create_recipe_with_image_url(client, db_session, mocker):
     assert recipe is not None
 
 
-def test_create_recipe_with_invalid_image_url(client, db_session, mocker):
+def test_create_recipe_with_invalid_image_url(auth_client, db_session, mocker):
     """Test that invalid image URLs are handled gracefully."""
     # Mock the URL validation to fail
     mock_validate = mocker.patch('app.routes.validate_url')
     mock_validate.return_value = (False, 'Invalid URL')
     
-    response = client.post('/recipes', data={
+    response = auth_client.post('/recipes', data={
         'title': 'Recipe with Bad Image',
         'instructions': 'Test instructions.',
         'image_url': 'not-a-valid-url'
@@ -245,7 +252,7 @@ def test_layout_has_create_recipe_link(client):
     assert b'/recipes/new' in response.data
 
 
-def test_create_recipe_with_file_upload(client, db_session, mocker):
+def test_create_recipe_with_file_upload(auth_client, db_session, mocker):
     """Test creating a recipe with a file upload."""
     # Mock the save_uploaded_image function
     mock_save = mocker.patch('app.routes.save_uploaded_image')
@@ -258,7 +265,7 @@ def test_create_recipe_with_file_upload(client, db_session, mocker):
         'image_file': (io.BytesIO(b'fake-image-data'), 'test_image.jpg')
     }
     
-    response = client.post(
+    response = auth_client.post(
         '/recipes',
         data=data,
         follow_redirects=True
@@ -270,7 +277,7 @@ def test_create_recipe_with_file_upload(client, db_session, mocker):
     assert recipe is not None
 
 
-def test_update_recipe_preserves_other_fields(client, db_session):
+def test_update_recipe_preserves_other_fields(auth_client, db_session):
     """Test that updating a recipe doesn't reset unspecified fields."""
     recipe = Recipe(
         title='Original Title',
@@ -286,7 +293,7 @@ def test_update_recipe_preserves_other_fields(client, db_session):
     db_session.commit()
     
     # Update only the title
-    response = client.post(f'/recipes/{recipe.id}', data={
+    response = auth_client.post(f'/recipes/{recipe.id}', data={
         'title': 'New Title',
         'instructions': 'Original instructions.',
         'ingredients': 'Original ingredients',
@@ -303,9 +310,9 @@ def test_update_recipe_preserves_other_fields(client, db_session):
     assert updated.servings == 4
 
 
-def test_create_recipe_empty_tags(client, db_session):
+def test_create_recipe_empty_tags(auth_client, db_session):
     """Test that empty tag strings don't create empty tags."""
-    response = client.post('/recipes', data={
+    response = auth_client.post('/recipes', data={
         'title': 'No Tags Recipe',
         'instructions': 'Some instructions.',
         'tags': '  , ,   '
