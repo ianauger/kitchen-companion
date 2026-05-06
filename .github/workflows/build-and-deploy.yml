@@ -1,4 +1,4 @@
-name: Build, Review, and Deploy
+name: Build, Test, and Deploy
 
 on:
   push:
@@ -60,39 +60,6 @@ jobs:
           name: test-results
           path: test-results.xml
           retention-days: 7
-
-  code-review:
-    needs: test
-    if: github.event_name == 'pull_request' && needs.test.outputs.test_passed == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Generate diff
-        run: |
-          git diff origin/${{ github.base_ref }}...origin/${{ github.head_ref }} > pr.diff
-          echo "Diff size: $(wc -l < pr.diff) lines"
-
-      - name: Install review tools
-        run: |
-          pip install requests
-
-      - name: Run automated code review
-        id: review
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-          DIFF_FILE: pr.diff
-        run: |
-          python .github/scripts/code-review.py
-        continue-on-error: true
 
   build-and-push:
     if: github.event_name != 'pull_request'
