@@ -11,6 +11,7 @@ MAX_TAG_NAME_LENGTH = 100
 MAX_DOWNLOAD_SIZE = 10 * 1024 * 1024  # 10MB
 DOWNLOAD_TIMEOUT = 15  # seconds
 DOWNLOAD_CHUNK_SIZE = 8192  # 8KB
+MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max request body
 
 # Pagination defaults
 DEFAULT_PER_PAGE = 20
@@ -34,6 +35,7 @@ class Config:
     
     # JWT settings
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
+    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max request body
     # Session settings (web UI)
     PERMANENT_SESSION_LIFETIME = timedelta(hours=12)
     SESSION_COOKIE_HTTPONLY = True

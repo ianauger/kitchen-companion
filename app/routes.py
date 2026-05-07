@@ -114,7 +114,8 @@ def add_shopping_items_web():
     added = []
     try:
         for item_data in data['items']:
-            name = item_data.get('name', '').strip()
+            # Normalize: collapse whitespace for consistent comparison
+            name = ' '.join(item_data.get('name', '').split())
             if not name:
                 continue
             ri = item_data.get('recipe_id')
@@ -868,7 +869,8 @@ def add_shopping_items():
     added = []
     try:
         for item_data in data['items']:
-            name = item_data.get('name', '').strip()
+            # Normalize: collapse whitespace for consistent comparison
+            name = ' '.join(item_data.get('name', '').split())
             if not name:
                 continue
             ri = item_data.get('recipe_id')

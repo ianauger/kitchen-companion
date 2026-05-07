@@ -3,6 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#c026d3">
+    <meta name="description" content="Kitchen Companion — your digital cookbook with recipes, meal planning, and shopping lists">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
     <title>{% block title %}Kitchen Companion{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -167,8 +171,21 @@
     </div>
 
     <script>
-        // Mobile menu toggle
-        const menuBtn = document.getElementById('mobile-menu-btn');
+        // Register service worker for PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/static/service-worker.js', {
+                    scope: '/'
+                }).then((reg) => {
+                    console.log('Service Worker registered:', reg.scope);
+                }).catch((err) => {
+                    console.warn('Service Worker registration failed:', err);
+                });
+            });
+        }
+    </script>
+    
+    {% block extra_js %}{% endblock %}
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('sidebar-overlay');
         const menuIcon = document.getElementById('menu-icon');
