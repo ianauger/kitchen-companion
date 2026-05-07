@@ -66,6 +66,12 @@ htmlcov/
 logs/
 linux-venv/
 
+# One-off utility/repair scripts — delete after use
+*repair*.py
+*fix*.py
+*batch*.py
+*batch*.sh
+
 # Secrets (API keys, tokens, credentials)
 .api-key
 .jwt-token
