@@ -518,9 +518,8 @@ def get_recipes():
     
     # Single tag filter (backwards compat)
     tag_name = request.args.get('tag')
+    tag_type = request.args.get('tag_type')
     if tag_name:
-        query = query.filter(Recipe.tags.any(name=tag_name))
-    if tag_type:
         query = query.filter(Recipe.tags.any(name=tag_name))
     if tag_type:
         query = query.filter(Recipe.tags.any(tag_type=tag_type))

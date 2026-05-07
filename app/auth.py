@@ -1,7 +1,9 @@
 """Authentication module for Kitchen Companion."""
 import os
 import re
+import hmac
 import secrets
+import hashlib
 from datetime import datetime
 from functools import wraps
 from flask import Blueprint, request, jsonify, session, redirect, url_for, flash, render_template
@@ -88,7 +90,7 @@ class User(db.Model):
         password_hash: bcrypt hashed password
         role: Authorization level (admin, editor, viewer)
         api_key_hash: sha256 hash of per-user API key (or None if not set)
-        api_key_prefix: First 8 chars of API key for identification in UI
+        api_key_prefix: First 12 chars of API key for identification in UI
         api_key_created_at: When the API key was last generated
         created_at: Account creation timestamp
     """
@@ -102,7 +104,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(128), nullable=False)
     role = db.Column(db.String(16), nullable=False, default=DEFAULT_ROLE, index=True)
     api_key_hash = db.Column(db.String(64), nullable=True)
-    api_key_prefix = db.Column(db.String(8), nullable=True)
+    api_key_prefix = db.Column(db.String(12), nullable=True)
     api_key_created_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -130,7 +132,6 @@ class User(db.Model):
         
         The raw key is only returned once — it cannot be retrieved later.
         """
-        import hashlib
         raw_key = f"sk-{secrets.token_urlsafe(32)}"
         self.api_key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
         self.api_key_prefix = raw_key[:12]  # "sk-XXXXXXXX"
@@ -139,10 +140,12 @@ class User(db.Model):
 
     def check_api_key(self, raw_key):
         """Verify a raw API key against the stored hash."""
-        import hashlib
         if not self.api_key_hash:
             return False
-        return hashlib.sha256(raw_key.encode()).hexdigest() == self.api_key_hash
+        return hmac.compare_digest(
+            hashlib.sha256(raw_key.encode()).hexdigest(),
+            self.api_key_hash
+        )
 
     def revoke_api_key(self):
         """Revoke the API key."""
@@ -203,13 +206,17 @@ def _authenticate_api_key():
     if not api_key:
         return None
 
-    # 1. Check global service API key (env var)
-    if SERVICE_API_KEY and api_key == SERVICE_API_KEY:
-        # Global key acts as a virtual admin-level identity
+    # 1. Check global service API key (env var) — constant-time comparison
+    if SERVICE_API_KEY and hmac.compare_digest(api_key, SERVICE_API_KEY):
         return _VirtualServiceUser()
 
-    # 2. Check per-user API keys
-    for user in User.query.filter(User.api_key_hash.isnot(None)).all():
+    # 2. Check per-user API keys — narrow by prefix to avoid O(n) scan
+    prefix = api_key[:12]
+    candidates = User.query.filter(
+        User.api_key_prefix == prefix,
+        User.api_key_hash.isnot(None)
+    ).all()
+    for user in candidates:
         if user.check_api_key(api_key):
             return user
 
@@ -473,13 +480,36 @@ def revoke_api_key(user_id):
 
 
 # ============================================================================
+# Helpers
+# ============================================================================
+
+def _is_safe_redirect_url(target):
+    """Validate that a redirect target is same-origin to prevent open redirects.
+    
+    Args:
+        target: The redirect URL from user input
+        
+    Returns:
+        True if the URL is safe to redirect to, False otherwise.
+    """
+    from urllib.parse import urlparse, urljoin
+    if not target:
+        return False
+    ref_url = urlparse(request.host_url)
+    test_url = urlparse(urljoin(request.host_url, target))
+    return test_url.scheme in ('http', 'https') and ref_url.netloc == test_url.netloc
+
+
+# ============================================================================
 # Web UI Auth Routes
 # ============================================================================
 
 @web_bp.route('/signin', methods=['GET'])
 def login_page():
     """Render the login page."""
-    next_page = request.args.get('next', url_for('main.index'))
+    next_page = request.args.get('next', '')
+    if not _is_safe_redirect_url(next_page):
+        next_page = url_for('main.index')
     return render_template('login.html', next=next_page)
 
 
@@ -489,7 +519,9 @@ def login_submit():
     """Process login form submission for web UI."""
     username = request.form.get('username', '').strip()
     password = request.form.get('password', '')
-    next_page = request.form.get('next', url_for('main.index'))
+    next_page = request.form.get('next', '')
+    if not _is_safe_redirect_url(next_page):
+        next_page = url_for('main.index')
 
     if not username or not password:
         flash('Username and password are required.', 'error')
