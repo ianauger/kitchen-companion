@@ -1,5 +1,7 @@
 """Authentication module for Kitchen Companion."""
+import os
 import re
+import secrets
 from datetime import datetime
 from functools import wraps
 from flask import Blueprint, request, jsonify, session, redirect, url_for, flash, render_template
@@ -8,6 +10,9 @@ from flask_jwt_extended import (
 )
 from flask_bcrypt import Bcrypt
 from app import db, limiter
+
+# Global service API key — if set, the X-API-Key header can bypass JWT for write ops
+SERVICE_API_KEY = os.environ.get('SERVICE_API_KEY')
 
 auth_bp = Blueprint('auth', __name__)
 web_bp = Blueprint('web_auth', __name__)
@@ -82,6 +87,9 @@ class User(db.Model):
         username: Login name (unique, case-insensitive)
         password_hash: bcrypt hashed password
         role: Authorization level (admin, editor, viewer)
+        api_key_hash: sha256 hash of per-user API key (or None if not set)
+        api_key_prefix: First 8 chars of API key for identification in UI
+        api_key_created_at: When the API key was last generated
         created_at: Account creation timestamp
     """
     __tablename__ = 'users'
@@ -93,6 +101,9 @@ class User(db.Model):
     username = db.Column(db.String(64), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(128), nullable=False)
     role = db.Column(db.String(16), nullable=False, default=DEFAULT_ROLE, index=True)
+    api_key_hash = db.Column(db.String(64), nullable=True)
+    api_key_prefix = db.Column(db.String(8), nullable=True)
+    api_key_created_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password):
@@ -114,12 +125,40 @@ class User(db.Model):
         """Verify a password against the stored hash."""
         return bcrypt.check_password_hash(self.password_hash, password)
 
+    def set_api_key(self):
+        """Generate a new API key, store its hash, return the raw key.
+        
+        The raw key is only returned once — it cannot be retrieved later.
+        """
+        import hashlib
+        raw_key = f"sk-{secrets.token_urlsafe(32)}"
+        self.api_key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+        self.api_key_prefix = raw_key[:12]  # "sk-XXXXXXXX"
+        self.api_key_created_at = datetime.utcnow()
+        return raw_key
+
+    def check_api_key(self, raw_key):
+        """Verify a raw API key against the stored hash."""
+        import hashlib
+        if not self.api_key_hash:
+            return False
+        return hashlib.sha256(raw_key.encode()).hexdigest() == self.api_key_hash
+
+    def revoke_api_key(self):
+        """Revoke the API key."""
+        self.api_key_hash = None
+        self.api_key_prefix = None
+        self.api_key_created_at = None
+
     def to_dict(self):
-        """Convert user to dict (excludes password hash)."""
+        """Convert user to dict (excludes password hash and API key hash)."""
         return {
             'id': self.id,
             'username': self.username,
             'role': self.role,
+            'has_api_key': self.api_key_hash is not None,
+            'api_key_prefix': self.api_key_prefix,
+            'api_key_created_at': self.api_key_created_at.isoformat() if self.api_key_created_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
@@ -154,9 +193,62 @@ def admin_required(fn):
     return role_required('admin')(fn)
 
 
+def _authenticate_api_key():
+    """Check X-API-Key header against user-scoped keys and global service key.
+
+    Returns:
+        User object if authenticated, None otherwise.
+    """
+    api_key = request.headers.get('X-API-Key')
+    if not api_key:
+        return None
+
+    # 1. Check global service API key (env var)
+    if SERVICE_API_KEY and api_key == SERVICE_API_KEY:
+        # Global key acts as a virtual admin-level identity
+        return _VirtualServiceUser()
+
+    # 2. Check per-user API keys
+    for user in User.query.filter(User.api_key_hash.isnot(None)).all():
+        if user.check_api_key(api_key):
+            return user
+
+    return None
+
+
+class _VirtualServiceUser:
+    """Lightweight object representing the global service API key identity.
+    
+    Not persisted — used purely to satisfy decorator role checks.
+    """
+    id = None
+    username = 'service-account'
+    role = 'admin'
+
+    def to_dict(self):
+        return {'username': self.username, 'role': self.role}
+
+
 def editor_or_admin(fn):
-    """Shortcut for write-access API endpoints (editor + admin, no delete)."""
-    return role_required('editor', 'admin')(fn)
+    """Decorator for write-access API endpoints.
+    
+    Accepts either:
+      - A valid JWT Bearer token (editor or admin role)
+      - A valid X-API-Key header (per-user key with editor/admin role,
+        or the global SERVICE_API_KEY env var)
+    """
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        # Try API key auth first
+        user = _authenticate_api_key()
+        if user is not None:
+            if user.role not in ('editor', 'admin'):
+                return jsonify({'error': 'Insufficient permissions — API key role must be editor or admin'}), 403
+            return fn(*args, **kwargs)
+
+        # Fall through to JWT-based auth
+        return role_required('editor', 'admin')(fn)(*args, **kwargs)
+    return wrapper
 
 
 # ============================================================================
@@ -318,6 +410,66 @@ def update_user_role(user_id):
     db.session.commit()
 
     return jsonify(user.to_dict()), 200
+
+
+# ============================================================================
+# API Key Management Endpoints
+# ============================================================================
+
+@auth_bp.route('/users/<int:user_id>/api-key', methods=['POST'])
+@jwt_required()
+def generate_api_key(user_id):
+    """Generate a new API key for a user (admin or self).
+    
+    Admins can generate keys for any user.
+    Users can generate keys for themselves.
+    The raw key is returned only once — save it!
+    """
+    current_user_id = int(get_jwt_identity())
+    claims = get_jwt()
+    is_admin = claims.get('role') == 'admin'
+
+    if not is_admin and current_user_id != user_id:
+        return jsonify({'error': 'You can only generate API keys for your own account'}), 403
+
+    user = db.session.get(User, user_id)
+    if user is None:
+        return jsonify({'error': 'User not found'}), 404
+
+    # Generate the key (this revokes any existing key)
+    raw_key = user.set_api_key()
+    db.session.commit()
+
+    return jsonify({
+        'message': 'API key generated. Save it now — it will not be shown again.',
+        'api_key': raw_key,
+        'prefix': user.api_key_prefix,
+        'user': user.to_dict()
+    }), 201
+
+
+@auth_bp.route('/users/<int:user_id>/api-key', methods=['DELETE'])
+@jwt_required()
+def revoke_api_key(user_id):
+    """Revoke a user's API key (admin or self)."""
+    current_user_id = int(get_jwt_identity())
+    claims = get_jwt()
+    is_admin = claims.get('role') == 'admin'
+
+    if not is_admin and current_user_id != user_id:
+        return jsonify({'error': 'You can only revoke your own API key'}), 403
+
+    user = db.session.get(User, user_id)
+    if user is None:
+        return jsonify({'error': 'User not found'}), 404
+
+    if not user.api_key_hash:
+        return jsonify({'error': 'No API key to revoke'}), 404
+
+    user.revoke_api_key()
+    db.session.commit()
+
+    return jsonify({'message': 'API key revoked', 'user': user.to_dict()}), 200
 
 
 # ============================================================================
@@ -504,4 +656,62 @@ def admin_delete_user(user_id):
     db.session.commit()
 
     flash(f'User {username} deleted.', 'success')
+    return redirect(url_for('web_auth.admin_settings_page'))
+
+
+@web_bp.route('/admin/users/<int:user_id>/api-key', methods=['POST'])
+@limiter.limit("10 per minute")
+def admin_generate_api_key(user_id):
+    """Generate a new API key via web UI (admin or self)."""
+    if 'user_id' not in session:
+        flash('Please log in first.', 'warning')
+        return redirect(url_for('web_auth.login_page', next=request.path))
+
+    is_admin = session.get('role') == 'admin'
+    is_self = session['user_id'] == user_id
+
+    if not is_admin and not is_self:
+        flash('You can only generate API keys for your own account.', 'error')
+        return redirect(url_for('web_auth.admin_settings_page'))
+
+    user = User.query.get(user_id)
+    if user is None:
+        flash('User not found.', 'error')
+        return redirect(url_for('web_auth.admin_settings_page'))
+
+    raw_key = user.set_api_key()
+    db.session.commit()
+
+    flash(f'API key generated for {user.username}: <code class="bg-green-100 px-2 py-1 rounded text-sm font-mono">{raw_key}</code> — copy it now, it will not be shown again!', 'success')
+    return redirect(url_for('web_auth.admin_settings_page'))
+
+
+@web_bp.route('/admin/users/<int:user_id>/api-key/revoke', methods=['POST'])
+@limiter.limit("10 per minute")
+def admin_revoke_api_key(user_id):
+    """Revoke a user's API key via web UI (admin or self)."""
+    if 'user_id' not in session:
+        flash('Please log in first.', 'warning')
+        return redirect(url_for('web_auth.login_page', next=request.path))
+
+    is_admin = session.get('role') == 'admin'
+    is_self = session['user_id'] == user_id
+
+    if not is_admin and not is_self:
+        flash('You can only revoke your own API key.', 'error')
+        return redirect(url_for('web_auth.admin_settings_page'))
+
+    user = User.query.get(user_id)
+    if user is None:
+        flash('User not found.', 'error')
+        return redirect(url_for('web_auth.admin_settings_page'))
+
+    if not user.api_key_hash:
+        flash('No API key to revoke.', 'error')
+        return redirect(url_for('web_auth.admin_settings_page'))
+
+    user.revoke_api_key()
+    db.session.commit()
+
+    flash(f'API key revoked for {user.username}.', 'success')
     return redirect(url_for('web_auth.admin_settings_page'))
