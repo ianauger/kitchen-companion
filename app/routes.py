@@ -1,5 +1,5 @@
 """Route handlers for Kitchen Companion application."""
-from flask import Blueprint, request, jsonify, render_template, redirect, url_for, flash
+from flask import Blueprint, request, jsonify, render_template, redirect, url_for, flash, current_app
 from werkzeug.utils import secure_filename
 from app import db, limiter
 from app.models import Recipe, Tag, Note, ShoppingItem
@@ -11,7 +11,7 @@ from config import (
 )
 from sqlalchemy.orm import joinedload
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Blueprint for main pages
 main_bp = Blueprint('main', __name__)
@@ -78,7 +78,6 @@ def api_docs():
 @main_bp.route('/shopping-list')
 def shopping_list():
     """Render the shopping list page."""
-    from sqlalchemy.orm import joinedload
     items = ShoppingItem.query.options(
         joinedload(ShoppingItem.recipe)
     ).order_by(ShoppingItem.purchased.asc(), ShoppingItem.created_at.desc()).all()
@@ -92,7 +91,6 @@ def shopping_list():
 @main_bp.route('/shopping-items', methods=['GET'])
 def get_shopping_items_web():
     """Get all shopping list items (web UI, no auth required for GET)."""
-    from sqlalchemy.orm import joinedload
     items = ShoppingItem.query.options(
         joinedload(ShoppingItem.recipe)
     ).order_by(ShoppingItem.purchased.asc(), ShoppingItem.created_at.desc()).all()
@@ -104,7 +102,6 @@ def get_shopping_items_web():
 @editor_or_admin_web
 def add_shopping_items_web():
     """Add items to the shopping list (web UI, session auth)."""
-    from flask import current_app
     data = request.get_json()
     if not data or 'items' not in data:
         return jsonify({'error': 'items array is required'}), 400
@@ -224,8 +221,6 @@ def edit_recipe_form(recipe_id):
 @editor_or_admin_web
 def create_recipe_submit():
     """Handle form submission for creating a new recipe."""
-    from flask import current_app
-    
     # Validate required fields
     title = request.form.get('title', '').strip()
     instructions = request.form.get('instructions', '').strip()
@@ -301,8 +296,6 @@ def create_recipe_submit():
 @editor_or_admin_web
 def update_recipe_submit(recipe_id):
     """Handle form submission for updating an existing recipe."""
-    from flask import current_app
-    
     recipe = Recipe.query.get_or_404(recipe_id)
     
     # Validate and extract required fields
@@ -330,24 +323,23 @@ def update_recipe_submit(recipe_id):
     elif request.form.get('clear_source'):
         recipe.source_url = None
 
-    # For numeric fields, check if they are present and not empty strings
-    cooking_time = request.form.get('cooking_time')
-    if cooking_time is not None and cooking_time != '':
-        recipe.cooking_time = int(cooking_time)
-        
-    prep_time = request.form.get('prep_time')
-    if prep_time is not None and prep_time != '':
-        recipe.prep_time = int(prep_time)
-        
-    servings = request.form.get('servings')
-    if servings is not None and servings != '':
-        recipe.servings = int(servings)
+    cooking_time = request.form.get('cooking_time', type=int)
+    if cooking_time is not None:
+        recipe.cooking_time = cooking_time
+
+    prep_time = request.form.get('prep_time', type=int)
+    if prep_time is not None:
+        recipe.prep_time = prep_time
+
+    servings = request.form.get('servings', type=int)
+    if servings is not None:
+        recipe.servings = servings
         
     difficulty = request.form.get('difficulty')
     if difficulty:
         recipe.difficulty = difficulty
         
-    recipe.updated_at = datetime.utcnow()
+    recipe.updated_at = datetime.now(timezone.utc)
     
     try:
         # Handle tags (comma-separated values)
@@ -408,15 +400,14 @@ def update_recipe_submit(recipe_id):
 
 def save_uploaded_image(file, recipe_id):
     """Save an uploaded image file.
-    
+
     Args:
         file: The uploaded file object
         recipe_id: The recipe ID for filename
-        
+
     Returns:
         tuple: (relative_path, error_message) - relative_path is None on failure
     """
-    from flask import current_app
     import uuid
     from pathlib import Path
     
@@ -425,18 +416,12 @@ def save_uploaded_image(file, recipe_id):
     if not file.filename:
         return None, "No file selected"
     
-    # Get file extension — use only the FINAL suffix to prevent double-extension tricks
+    # Use only the FINAL suffix to prevent double-extension tricks
     # (e.g. evil.php.jpg → .jpg; evil.jpg.php → .php, which will be rejected)
     ext = Path(file.filename).suffix.lower()
     if ext not in allowed_extensions:
         return None, f"Invalid file type. Allowed: {', '.join(sorted(allowed_extensions))}"
-    
-    # Extra: ensure no additional extensions are hiding (e.g. evil.php.jpg has stem evil.php)
-    stem = Path(file.filename).stem
-    if '.' in stem:
-        # Strip the fake inner extension — rewrite to just use ext with a safe name
-        pass  # filename is fully replaced below, so this is informational only
-    
+
     # Generate filename
     filename = f'recipe_{recipe_id}_{uuid.uuid4().hex[:8]}{ext}'
     upload_dir = get_upload_dir()
@@ -476,8 +461,8 @@ def get_recipes():
     Returns:
         JSON object with recipes array and pagination info
     """
-    from sqlalchemy import func, and_
-    
+    from sqlalchemy import func, and_, or_
+
     # Eager load tags and notes to avoid N+1 queries
     query = Recipe.query.options(
         joinedload(Recipe.tags),
@@ -509,7 +494,6 @@ def get_recipes():
     # Multi-tag filter — ANY tag must match (union)
     if tag_names_any:
         tag_list = [t.strip() for t in tag_names_any.split(',') if t.strip()]
-        from sqlalchemy import or_
         tag_filters = [
             Recipe.tags.any(db.func.lower(Tag.name) == db.func.lower(t))
             for t in tag_list
@@ -518,7 +502,6 @@ def get_recipes():
     
     # Single tag filter (backwards compat)
     tag_name = request.args.get('tag')
-    tag_type = request.args.get('tag_type')
     if tag_name:
         query = query.filter(Recipe.tags.any(name=tag_name))
     if tag_type:
@@ -587,7 +570,7 @@ def get_recipes():
 @editor_or_admin
 def create_recipe():
     """Create a new recipe.
-    
+
     Request Body (JSON):
         title: (required) Recipe name
         instructions: (required) Cooking instructions
@@ -598,12 +581,10 @@ def create_recipe():
         servings: (optional) Number of servings
         difficulty: (optional) Difficulty level (easy/medium/hard)
         tags: (optional) Array of tag objects {name, tag_type}
-    
+
     Returns:
         JSON object of created recipe with 201 status
     """
-    from flask import current_app
-    
     data = request.get_json()
     
     if not data:
@@ -843,7 +824,6 @@ def get_random_recipes():
 @api_bp.route('/shopping-items', methods=['GET'])
 def get_shopping_items():
     """Get all shopping list items."""
-    from sqlalchemy.orm import joinedload
     purchased_filter = request.args.get('purchased', 'all')
     query = ShoppingItem.query.options(joinedload(ShoppingItem.recipe))
     if purchased_filter == 'true':
