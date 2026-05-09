@@ -167,9 +167,10 @@ def download_image(image_url, recipe_id=None):
         )
 
         # Follow redirects manually so every hop is SSRF-validated.
+        _redirect_codes = {301, 302, 303, 307, 308}
         max_redirects = 5
         hops = 0
-        while response.is_redirect and hops < max_redirects:
+        while response.status_code in _redirect_codes and hops < max_redirects:
             location = response.headers.get('Location', '')
             is_valid, error_msg = validate_url(location)
             if not is_valid:
