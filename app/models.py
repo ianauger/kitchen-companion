@@ -1,7 +1,11 @@
 """Database models for Kitchen Companion."""
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import CheckConstraint
 from app import db
+
+
+def _utcnow():
+    return datetime.now(timezone.utc)
 
 
 # Association table for many-to-many relationship between recipes and tags
@@ -45,8 +49,8 @@ class Recipe(db.Model):
     prep_time = db.Column(db.Integer, nullable=True, index=True)  # minutes
     servings = db.Column(db.Integer, nullable=True)
     difficulty = db.Column(db.String(20), default='medium', index=True)  # easy, medium, hard
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=_utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
     
     # Many-to-many relationship with tags
     tags = db.relationship(
@@ -206,8 +210,8 @@ class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     recipe_id = db.Column(db.Integer, db.ForeignKey('recipes.id'), nullable=False)
     content = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
     
     # Database-level constraint to enforce content length
     __table_args__ = (
@@ -250,8 +254,8 @@ class ShoppingItem(db.Model):
     name = db.Column(db.String(500), nullable=False)
     recipe_id = db.Column(db.Integer, db.ForeignKey('recipes.id'), nullable=True)
     purchased = db.Column(db.Boolean, default=False, index=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
     # Optional relationship back to recipe for showing source
     recipe = db.relationship(

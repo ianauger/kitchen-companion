@@ -34,7 +34,7 @@ class Config:
             raise ValueError("JWT_SECRET_KEY environment variable must be set")
     
     # JWT settings
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=8)
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max request body
     # Session settings (web UI)
     PERMANENT_SESSION_LIFETIME = timedelta(hours=12)

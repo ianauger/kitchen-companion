@@ -4,11 +4,13 @@ import re
 import hmac
 import secrets
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 from flask import Blueprint, request, jsonify, session, redirect, url_for, flash, render_template
+from markupsafe import Markup, escape
 from flask_jwt_extended import (
-    create_access_token, jwt_required, get_jwt_identity, get_jwt
+    create_access_token, jwt_required, get_jwt_identity, get_jwt,
+    verify_jwt_in_request
 )
 from flask_bcrypt import Bcrypt
 from app import db, limiter
@@ -106,7 +108,7 @@ class User(db.Model):
     api_key_hash = db.Column(db.String(64), nullable=True)
     api_key_prefix = db.Column(db.String(12), nullable=True)
     api_key_created_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def set_password(self, password):
         """Hash and store a password. Does NOT validate complexity."""
@@ -135,7 +137,7 @@ class User(db.Model):
         raw_key = f"sk-{secrets.token_urlsafe(32)}"
         self.api_key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
         self.api_key_prefix = raw_key[:12]  # "sk-XXXXXXXX"
-        self.api_key_created_at = datetime.utcnow()
+        self.api_key_created_at = datetime.now(timezone.utc)
         return raw_key
 
     def check_api_key(self, raw_key):
@@ -238,7 +240,7 @@ class _VirtualServiceUser:
 
 def editor_or_admin(fn):
     """Decorator for write-access API endpoints.
-    
+
     Accepts either:
       - A valid JWT Bearer token (editor or admin role)
       - A valid X-API-Key header (per-user key with editor/admin role,
@@ -253,8 +255,12 @@ def editor_or_admin(fn):
                 return jsonify({'error': 'Insufficient permissions — API key role must be editor or admin'}), 403
             return fn(*args, **kwargs)
 
-        # Fall through to JWT-based auth
-        return role_required('editor', 'admin')(fn)(*args, **kwargs)
+        # Fall through to JWT — raises flask_jwt_extended errors on missing/invalid token
+        verify_jwt_in_request()
+        claims = get_jwt()
+        if claims.get('role', 'viewer') not in ('editor', 'admin'):
+            return jsonify({'error': 'Insufficient permissions'}), 403
+        return fn(*args, **kwargs)
     return wrapper
 
 
@@ -367,7 +373,7 @@ def login():
 def get_current_user():
     """Get the currently authenticated user's info."""
     user_id = get_jwt_identity()
-    user = User.query.get(int(user_id))
+    user = db.session.get(User, int(user_id))
     if user is None:
         return jsonify({'error': 'User not found'}), 404
     return jsonify(user.to_dict()), 200
@@ -514,7 +520,7 @@ def login_page():
 
 
 @web_bp.route('/signin', methods=['POST'])
-@limiter.limit("10 per minute")
+@limiter.limit("5 per minute")
 def login_submit():
     """Process login form submission for web UI."""
     username = request.form.get('username', '').strip()
@@ -558,15 +564,9 @@ def logout():
 
 @web_bp.route('/admin', methods=['GET'])
 @limiter.limit("30 per minute")
+@admin_required_web
 def admin_settings_page():
     """Render the admin settings page."""
-    if 'user_id' not in session:
-        flash('Please log in to access this page.', 'warning')
-        return redirect(url_for('web_auth.login_page', next=request.path))
-    if session.get('role') != 'admin':
-        flash('Admin access required.', 'error')
-        return redirect(url_for('main.index'))
-
     users = User.query.order_by(User.created_at.desc()).all()
     return render_template('admin_settings.html', users=users)
 
@@ -622,7 +622,7 @@ def admin_update_role(user_id):
         flash('Invalid role.', 'error')
         return redirect(url_for('web_auth.admin_settings_page'))
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if user is None:
         flash('User not found.', 'error')
         return redirect(url_for('web_auth.admin_settings_page'))
@@ -654,7 +654,7 @@ def admin_reset_password(user_id):
         flash(err, 'error')
         return redirect(url_for('web_auth.admin_settings_page'))
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if user is None:
         flash('User not found.', 'error')
         return redirect(url_for('web_auth.admin_settings_page'))
@@ -678,7 +678,7 @@ def admin_delete_user(user_id):
         flash('Cannot delete your own account.', 'error')
         return redirect(url_for('web_auth.admin_settings_page'))
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if user is None:
         flash('User not found.', 'error')
         return redirect(url_for('web_auth.admin_settings_page'))
@@ -706,7 +706,7 @@ def admin_generate_api_key(user_id):
         flash('You can only generate API keys for your own account.', 'error')
         return redirect(url_for('web_auth.admin_settings_page'))
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if user is None:
         flash('User not found.', 'error')
         return redirect(url_for('web_auth.admin_settings_page'))
@@ -714,7 +714,11 @@ def admin_generate_api_key(user_id):
     raw_key = user.set_api_key()
     db.session.commit()
 
-    flash(f'API key generated for {user.username}: <code class="bg-green-100 px-2 py-1 rounded text-sm font-mono">{raw_key}</code> — copy it now, it will not be shown again!', 'success')
+    flash(Markup(
+        f'API key generated for {escape(user.username)}: '
+        f'<code class="bg-green-100 px-2 py-1 rounded text-sm font-mono">{escape(raw_key)}</code>'
+        f' — copy it now, it will not be shown again!'
+    ), 'success')
     return redirect(url_for('web_auth.admin_settings_page'))
 
 
@@ -733,7 +737,7 @@ def admin_revoke_api_key(user_id):
         flash('You can only revoke your own API key.', 'error')
         return redirect(url_for('web_auth.admin_settings_page'))
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if user is None:
         flash('User not found.', 'error')
         return redirect(url_for('web_auth.admin_settings_page'))
