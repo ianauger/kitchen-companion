@@ -176,7 +176,8 @@ class Tag(db.Model):
         if existing:
             return existing, False
         
-        # Create new tag
+        # TODO: wrap insert in try/except IntegrityError + re-query to handle concurrent
+        # requests that both reach this point simultaneously (race condition).
         new_tag = cls(name=normalized_name, tag_type=tag_type)
         db.session.add(new_tag)
         db.session.flush()  # Flush to get ID without committing

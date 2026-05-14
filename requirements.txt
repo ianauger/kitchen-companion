@@ -10,5 +10,6 @@ Flask-WTF==1.2.1
 # Development dependencies
 pytest==7.4.3
 pytest-mock==3.12.0
+# TODO: add pytest-cov to enable coverage reporting (pytest --cov=app)
 Flask-Migrate==4.0.5
 Flask-Limiter==3.5.0

@@ -574,6 +574,7 @@ def admin_settings_page():
 @web_bp.route('/admin/users', methods=['POST'])
 @limiter.limit("10 per minute")
 def admin_create_user():
+    # TODO: replace inline session checks in this and sibling admin routes with @admin_required_web
     """Create a new user (admin only, web UI form)."""
     if 'user_id' not in session or session.get('role') != 'admin':
         flash('Admin access required.', 'error')
