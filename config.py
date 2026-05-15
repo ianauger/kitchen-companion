@@ -27,6 +27,14 @@ class Config:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
+    # Connection pool settings
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_size': 5,
+        'max_overflow': 10,
+        'pool_recycle': 1800,  # 30 minutes
+        'pool_pre_ping': True,
+    }
+    
     def __init__(self):
         if not self.SECRET_KEY:
             raise ValueError("SECRET_KEY environment variable must be set")
