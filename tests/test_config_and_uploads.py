@@ -5,6 +5,12 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
+# Minimal valid magic-byte headers for each supported format
+JPEG_BYTES = b'\xff\xd8\xff' + b'\x00' * 20
+PNG_BYTES = b'\x89PNG\r\n\x1a\n' + b'\x00' * 20
+GIF_BYTES = b'GIF89a' + b'\x00' * 20
+WEBP_BYTES = b'RIFF' + b'\x00\x00\x00\x00' + b'WEBP' + b'\x00' * 20
+
 
 class TestProductionConfig:
     def test_missing_secret_key_raises(self):
@@ -128,7 +134,7 @@ class TestSaveUploadedImage:
             app.static_folder = str(tmp_path)
             try:
                 from werkzeug.datastructures import FileStorage
-                file = FileStorage(stream=BytesIO(b'fake data'), filename='evil.php.jpg')
+                file = FileStorage(stream=BytesIO(JPEG_BYTES), filename='evil.php.jpg')
                 rel, err = save(file, 1)
                 assert rel is not None
                 assert err is None
@@ -150,14 +156,17 @@ class TestSaveUploadedImage:
     def test_all_allowed_extensions(self, app, tmp_path):
         """All .jpg, .jpeg, .png, .gif, .webp are accepted."""
         save = self._get_save_func()
-        allowed = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+        ext_bytes = {
+            '.jpg': JPEG_BYTES, '.jpeg': JPEG_BYTES,
+            '.png': PNG_BYTES, '.gif': GIF_BYTES, '.webp': WEBP_BYTES,
+        }
         with app.app_context():
             original = app.static_folder
             app.static_folder = str(tmp_path)
             try:
                 from werkzeug.datastructures import FileStorage
-                for ext in allowed:
-                    file = FileStorage(stream=BytesIO(b'data'), filename=f'test{ext}')
+                for ext, content in ext_bytes.items():
+                    file = FileStorage(stream=BytesIO(content), filename=f'test{ext}')
                     rel, err = save(file, 1)
                     assert rel is not None, f'{ext} should be accepted'
                     assert err is None, f'{ext} should not have error'
@@ -172,7 +181,7 @@ class TestSaveUploadedImage:
             app.static_folder = str(tmp_path)
             try:
                 from werkzeug.datastructures import FileStorage
-                file = FileStorage(stream=BytesIO(b'data'), filename='PHOTO.JPG')
+                file = FileStorage(stream=BytesIO(JPEG_BYTES), filename='PHOTO.JPG')
                 rel, err = save(file, 1)
                 assert rel is not None
                 assert err is None

@@ -9,8 +9,9 @@ from config import (
     MAX_NOTE_LENGTH, MAX_TAG_NAME_LENGTH,
     DEFAULT_PER_PAGE, MAX_PER_PAGE
 )
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 import os
+import random
 from datetime import datetime, timezone
 
 # Blueprint for main pages
@@ -18,6 +19,28 @@ main_bp = Blueprint('main', __name__)
 
 # Blueprint for API endpoints
 api_bp = Blueprint('api', __name__)
+
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+def _random_recipes(count: int):
+    """Return up to *count* randomly sampled recipes with tags and notes loaded.
+
+    Samples from all recipe IDs in Python rather than using ORDER BY RANDOM(),
+    which is a full-table sort and degrades linearly with table size.
+    """
+    id_rows = db.session.query(Recipe.id).all()
+    if not id_rows:
+        return []
+    sampled_ids = random.sample([r[0] for r in id_rows], min(count, len(id_rows)))
+    return (
+        Recipe.query
+        .options(joinedload(Recipe.tags), joinedload(Recipe.notes))
+        .filter(Recipe.id.in_(sampled_ids))
+        .all()
+    )
 
 
 # ============================================================================
@@ -38,23 +61,17 @@ def health():
 @main_bp.route('/')
 def index():
     """Render the home page with a random selection of 6 recipes."""
-    from sqlalchemy import func
-    # Eager load tags and notes to avoid N+1 queries
-    recipes_list = Recipe.query.options(
-        joinedload(Recipe.tags),
-        joinedload(Recipe.notes)
-    ).order_by(func.random()).limit(6).all()
+    recipes_list = _random_recipes(6)
     return render_template('home.html', recipes=recipes_list)
 
 
 @main_bp.route('/recipe/<int:recipe_id>')
 def get_recipe_detail(recipe_id):
     """Render the detailed view of a single recipe."""
-    # Eager load tags and notes to avoid N+1 queries
     recipe = Recipe.query.options(
         joinedload(Recipe.tags),
         joinedload(Recipe.notes)
-    ).get_or_404(recipe_id)
+    ).filter_by(id=recipe_id).first_or_404()
     return render_template('recipe_detail.html', recipe=recipe)
 
 
@@ -101,6 +118,7 @@ def get_shopping_items_web():
 @limiter.limit("30 per minute")
 @editor_or_admin_web
 def add_shopping_items_web():
+    # TODO: merge with add_shopping_items() — both functions share identical logic
     """Add items to the shopping list (web UI, session auth)."""
     data = request.get_json()
     if not data or 'items' not in data:
@@ -140,7 +158,7 @@ def add_shopping_items_web():
 @editor_or_admin_web
 def update_shopping_item_web(item_id):
     """Update a shopping item (web UI, session auth)."""
-    item = ShoppingItem.query.get_or_404(item_id)
+    item = db.get_or_404(ShoppingItem, item_id)
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -156,7 +174,7 @@ def update_shopping_item_web(item_id):
 @editor_or_admin_web
 def delete_shopping_item_web(item_id):
     """Delete a shopping item (web UI, session auth)."""
-    item = ShoppingItem.query.get_or_404(item_id)
+    item = db.get_or_404(ShoppingItem, item_id)
     db.session.delete(item)
     db.session.commit()
     return '', 204
@@ -199,7 +217,7 @@ def edit_recipe_form(recipe_id):
     """Render the form for editing an existing recipe."""
     recipe = Recipe.query.options(
         joinedload(Recipe.tags)
-    ).get_or_404(recipe_id)
+    ).filter_by(id=recipe_id).first_or_404()
     
     # Get all tags grouped by type for the tag selector
     tags = Tag.query.all()
@@ -296,7 +314,7 @@ def create_recipe_submit():
 @editor_or_admin_web
 def update_recipe_submit(recipe_id):
     """Handle form submission for updating an existing recipe."""
-    recipe = Recipe.query.get_or_404(recipe_id)
+    recipe = db.get_or_404(Recipe, recipe_id)
     
     # Validate and extract required fields
     title = request.form.get('title', '').strip()
@@ -313,9 +331,7 @@ def update_recipe_submit(recipe_id):
     recipe.title = title
     recipe.instructions = instructions
     
-    ingredients = request.form.get('ingredients', '').strip()
-    if ingredients:
-        recipe.ingredients = ingredients
+    recipe.ingredients = request.form.get('ingredients', '').strip() or None
         
     source_url = request.form.get('source_url', '').strip()
     if source_url:
@@ -352,26 +368,27 @@ def update_recipe_submit(recipe_id):
                     tag, _ = Tag.get_or_create(name=tag_name, tag_type='custom')
                     recipe.tags.append(tag)
         
-        # Handle image upload from file
-        if 'image_file' in request.files:
-            file = request.files['image_file']
-            if file and file.filename:
-                # Delete old image if exists
-                if recipe.image_path:
-                    delete_image(recipe.image_path)
-                relative_path, error = save_uploaded_image(file, recipe.id)
-                if relative_path:
-                    recipe.image_path = relative_path
-                elif error:
-                    current_app.logger.warning(f'Image upload failed: {error}')
-        
-        # Handle image URL if provided and file not uploaded
-        elif not recipe.image_path or request.form.get('clear_image'):
+        # Image update: file upload > explicit clear > URL replacement (mutually exclusive)
+        uploaded_file = request.files.get('image_file')
+        if uploaded_file and uploaded_file.filename:
+            if recipe.image_path:
+                delete_image(recipe.image_path)
+            relative_path, error = save_uploaded_image(uploaded_file, recipe.id)
+            if relative_path:
+                recipe.image_path = relative_path
+                recipe.image_url = None
+            elif error:
+                current_app.logger.warning(f'Image upload failed: {error}')
+        elif request.form.get('clear_image'):
+            if recipe.image_path:
+                delete_image(recipe.image_path)
+            recipe.image_path = None
+            recipe.image_url = None
+        else:
             image_url = request.form.get('image_url', '').strip()
-            if image_url:
+            if image_url and image_url != recipe.image_url:
                 is_valid, error_msg = validate_url(image_url)
                 if is_valid:
-                    # Delete old image if exists
                     if recipe.image_path:
                         delete_image(recipe.image_path)
                     relative_path, _ = download_image(image_url, recipe_id=recipe.id)
@@ -380,12 +397,6 @@ def update_recipe_submit(recipe_id):
                         recipe.image_url = image_url
                 else:
                     current_app.logger.warning(f'Invalid image URL: {error_msg}')
-        
-        # Handle image clearing
-        if request.form.get('clear_image') and recipe.image_path:
-            delete_image(recipe.image_path)
-            recipe.image_path = None
-            recipe.image_url = None
         
         db.session.commit()
         flash('Recipe updated successfully!', 'success')
@@ -398,6 +409,27 @@ def update_recipe_submit(recipe_id):
         return redirect(url_for('main.edit_recipe_form', recipe_id=recipe_id))
 
 
+_IMAGE_MAGIC_BYTES = [
+    (b'\xff\xd8\xff', None),       # JPEG
+    (b'\x89PNG\r\n\x1a\n', None),  # PNG
+    (b'GIF87a', None),              # GIF87a
+    (b'GIF89a', None),              # GIF89a
+    (b'RIFF', b'WEBP'),             # WebP: RIFF????WEBP
+]
+
+
+def _is_valid_image_content(file) -> bool:
+    """Check magic bytes to verify the file is a supported image; rewinds the file pointer."""
+    header = file.read(12)
+    file.seek(0)
+    for magic, extra in _IMAGE_MAGIC_BYTES:
+        if header[:len(magic)] == magic:
+            if extra is not None:
+                return header[8:8 + len(extra)] == extra
+            return True
+    return False
+
+
 def save_uploaded_image(file, recipe_id):
     """Save an uploaded image file.
 
@@ -408,26 +440,31 @@ def save_uploaded_image(file, recipe_id):
     Returns:
         tuple: (relative_path, error_message) - relative_path is None on failure
     """
+    # TODO: move uuid and Path imports to module level
     import uuid
     from pathlib import Path
-    
+
+    # SVG excluded: it can contain JavaScript and would be served from our origin.
     allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
-    
+
     if not file.filename:
         return None, "No file selected"
-    
+
     # Use only the FINAL suffix to prevent double-extension tricks
     # (e.g. evil.php.jpg → .jpg; evil.jpg.php → .php, which will be rejected)
     ext = Path(file.filename).suffix.lower()
     if ext not in allowed_extensions:
         return None, f"Invalid file type. Allowed: {', '.join(sorted(allowed_extensions))}"
 
+    if not _is_valid_image_content(file):
+        return None, "File content does not match a supported image format"
+
     # Generate filename
     filename = f'recipe_{recipe_id}_{uuid.uuid4().hex[:8]}{ext}'
     upload_dir = get_upload_dir()
     absolute_path = upload_dir / filename
     relative_path = f'uploads/recipes/{filename}'
-    
+
     try:
         file.save(str(absolute_path))
         return relative_path, None
@@ -461,14 +498,16 @@ def get_recipes():
     Returns:
         JSON object with recipes array and pagination info
     """
+    # TODO: move func, and_, or_ imports to module level
     from sqlalchemy import func, and_, or_
 
-    # Eager load tags and notes to avoid N+1 queries
+    # selectinload avoids the row-multiplication that joinedload causes with LIMIT/OFFSET:
+    # it issues separate IN-queries after pagination rather than a JOIN before it.
     query = Recipe.query.options(
-        joinedload(Recipe.tags),
-        joinedload(Recipe.notes)
+        selectinload(Recipe.tags),
+        selectinload(Recipe.notes)
     )
-    
+
     # Pagination
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', DEFAULT_PER_PAGE, type=int), MAX_PER_PAGE)
@@ -501,6 +540,7 @@ def get_recipes():
         query = query.filter(or_(*tag_filters))
     
     # Single tag filter (backwards compat)
+    # TODO: make this case-insensitive to match the ?tags= and ?tag_names= filters
     tag_name = request.args.get('tag')
     if tag_name:
         query = query.filter(Recipe.tags.any(name=tag_name))
@@ -678,11 +718,10 @@ def get_recipe(recipe_id):
     Returns:
         JSON object of the recipe or 404 error
     """
-    # Eager load tags and notes to avoid N+1 queries
     recipe = Recipe.query.options(
         joinedload(Recipe.tags),
         joinedload(Recipe.notes)
-    ).get_or_404(recipe_id)
+    ).filter_by(id=recipe_id).first_or_404()
     return jsonify(recipe.to_dict())
 
 
@@ -690,19 +729,19 @@ def get_recipe(recipe_id):
 @editor_or_admin
 def update_recipe(recipe_id):
     """Update an existing recipe.
-    
+
     Args:
         recipe_id: Recipe ID
-    
+
     Request Body (JSON):
         Any recipe fields to update.
         If image_url is provided and differs from current, the new image
         will be downloaded and the old local image deleted.
-    
+
     Returns:
         JSON object of updated recipe
     """
-    recipe = Recipe.query.get_or_404(recipe_id)
+    recipe = db.get_or_404(Recipe, recipe_id)
     data = request.get_json()
     
     if not data:
@@ -757,16 +796,16 @@ def update_recipe(recipe_id):
 @admin_required
 def delete_recipe(recipe_id):
     """Delete a recipe.
-    
+
     Also deletes the locally stored cover image if it exists.
-    
+
     Args:
         recipe_id: Recipe ID
-    
+
     Returns:
         Empty response with 204 status
     """
-    recipe = Recipe.query.get_or_404(recipe_id)
+    recipe = db.get_or_404(Recipe, recipe_id)
     
     # Clean up local image
     if recipe.image_path:
@@ -800,21 +839,15 @@ def get_tags():
 @api_bp.route('/recipes/random', methods=['GET'])
 def get_random_recipes():
     """Get a random selection of recipes.
-    
+
     Query Parameters:
         count: Number of recipes to return (default 6, max 20)
-    
+
     Returns:
         JSON array of recipes
     """
-    from sqlalchemy import func
     count = min(request.args.get('count', 6, type=int), 20)
-    # Use database-level random sampling with eager loading
-    recipes = Recipe.query.options(
-        joinedload(Recipe.tags),
-        joinedload(Recipe.notes)
-    ).order_by(func.random()).limit(count).all()
-    return jsonify([recipe.to_dict() for recipe in recipes])
+    return jsonify([r.to_dict() for r in _random_recipes(count)])
 
 
 # ============================================================================
@@ -877,7 +910,7 @@ def add_shopping_items():
 @editor_or_admin
 def update_shopping_item(item_id):
     """Update a shopping item."""
-    item = ShoppingItem.query.get_or_404(item_id)
+    item = db.get_or_404(ShoppingItem, item_id)
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -893,7 +926,7 @@ def update_shopping_item(item_id):
 @admin_required
 def delete_shopping_item(item_id):
     """Delete a shopping item."""
-    item = ShoppingItem.query.get_or_404(item_id)
+    item = db.get_or_404(ShoppingItem, item_id)
     db.session.delete(item)
     db.session.commit()
     return '', 204
@@ -915,14 +948,14 @@ def clear_purchased_items():
 @api_bp.route('/recipes/<int:recipe_id>/notes', methods=['GET'])
 def get_recipe_notes(recipe_id):
     """Get all notes for a recipe.
-    
+
     Args:
         recipe_id: Recipe ID
-    
+
     Returns:
         JSON array of notes
     """
-    recipe = Recipe.query.get_or_404(recipe_id)
+    recipe = db.get_or_404(Recipe, recipe_id)
     # Notes are now ordered by created_at.desc() via the relationship
     return jsonify([note.to_dict() for note in recipe.notes])
 
@@ -932,17 +965,17 @@ def get_recipe_notes(recipe_id):
 @editor_or_admin
 def create_note(recipe_id):
     """Create a new note for a recipe.
-    
+
     Args:
         recipe_id: Recipe ID
-    
+
     Request Body (JSON):
         content: (required) Note content
-    
+
     Returns:
         JSON object of created note with 201 status
     """
-    recipe = Recipe.query.get_or_404(recipe_id)
+    recipe = db.get_or_404(Recipe, recipe_id)
     data = request.get_json()
     
     if not data:
@@ -973,17 +1006,17 @@ def create_note(recipe_id):
 @editor_or_admin
 def update_note(note_id):
     """Update an existing note.
-    
+
     Args:
         note_id: Note ID
-    
+
     Request Body (JSON):
         content: (required) Updated note content
-    
+
     Returns:
         JSON object of updated note
     """
-    note = Note.query.get_or_404(note_id)
+    note = db.get_or_404(Note, note_id)
     data = request.get_json()
     
     if not data:
@@ -1008,14 +1041,14 @@ def update_note(note_id):
 @admin_required
 def delete_note(note_id):
     """Delete a note.
-    
+
     Args:
         note_id: Note ID
-    
+
     Returns:
         Empty response with 204 status
     """
-    note = Note.query.get_or_404(note_id)
+    note = db.get_or_404(Note, note_id)
     db.session.delete(note)
     db.session.commit()
     return '', 204
@@ -1026,17 +1059,17 @@ def delete_note(note_id):
 @editor_or_admin
 def add_recipe_tag(recipe_id):
     """Add a tag to a recipe.
-    
+
     Args:
         recipe_id: Recipe ID
-    
+
     Request Body (JSON):
         tag: (required) Tag name
-    
+
     Returns:
         JSON object of the added tag with 201 status
     """
-    recipe = Recipe.query.get_or_404(recipe_id)
+    recipe = db.get_or_404(Recipe, recipe_id)
     data = request.get_json()
     
     if not data or 'tag' not in data:

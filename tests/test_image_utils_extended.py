@@ -208,14 +208,17 @@ class TestDownloadImage:
             result = download_image('http://192.168.1.1/test.jpg')
             assert result == (None, None)
 
-    @patch('app.image_utils.requests.get')
-    def test_successful_download(self, mock_get, app, tmp_path):
+    @patch('app.image_utils.requests.Session')
+    def test_successful_download(self, mock_session_cls, app, tmp_path):
         """Successful download returns (relative_path, absolute_path)."""
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
         mock_response = MagicMock()
+        mock_response.status_code = 200
         mock_response.headers = {'Content-Type': 'image/jpeg', 'Content-Length': '100'}
         mock_response.iter_content.return_value = [b'fake-image-data']
-        mock_get.return_value = mock_response
         mock_response.raise_for_status = MagicMock()
+        mock_session.get.return_value = mock_response
 
         with app.app_context():
             original = app.static_folder
@@ -230,18 +233,20 @@ class TestDownloadImage:
             finally:
                 app.static_folder = original
 
-    @patch('app.image_utils.requests.get')
-    def test_download_exceeds_size_limit(self, mock_get, app, tmp_path):
+    @patch('app.image_utils.requests.Session')
+    def test_download_exceeds_size_limit(self, mock_session_cls, app, tmp_path):
         """Download exceeding MAX_DOWNLOAD_SIZE is aborted."""
         from config import MAX_DOWNLOAD_SIZE
 
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
         mock_response = MagicMock()
+        mock_response.status_code = 200
         mock_response.headers = {'Content-Type': 'image/jpeg'}
-        # Return a chunk bigger than the limit
         big_chunk = b'x' * (MAX_DOWNLOAD_SIZE + 100)
         mock_response.iter_content.return_value = [big_chunk]
-        mock_get.return_value = mock_response
         mock_response.raise_for_status = MagicMock()
+        mock_session.get.return_value = mock_response
 
         with app.app_context():
             original = app.static_folder
@@ -253,18 +258,21 @@ class TestDownloadImage:
             finally:
                 app.static_folder = original
 
-    @patch('app.image_utils.requests.get')
-    def test_download_content_length_too_large(self, mock_get, app, tmp_path):
+    @patch('app.image_utils.requests.Session')
+    def test_download_content_length_too_large(self, mock_session_cls, app, tmp_path):
         """Content-Length header exceeding limit causes early abort."""
         from config import MAX_DOWNLOAD_SIZE
 
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
         mock_response = MagicMock()
+        mock_response.status_code = 200
         mock_response.headers = {
             'Content-Type': 'image/jpeg',
             'Content-Length': str(MAX_DOWNLOAD_SIZE + 1)
         }
-        mock_get.return_value = mock_response
         mock_response.raise_for_status = MagicMock()
+        mock_session.get.return_value = mock_response
 
         with app.app_context():
             original = app.static_folder
@@ -276,32 +284,36 @@ class TestDownloadImage:
             finally:
                 app.static_folder = original
 
-    @patch('app.image_utils.requests.get')
-    def test_download_request_exception(self, mock_get, app):
+    @patch('app.image_utils.requests.Session')
+    def test_download_request_exception(self, mock_session_cls, app):
         """RequestException returns (None, None)."""
         import requests as requests_lib
-        mock_get.side_effect = requests_lib.RequestException('Connection error')
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
+        mock_session.get.side_effect = requests_lib.RequestException('Connection error')
 
         with app.app_context():
             rel, abs_path = download_image('https://example.com/broken.jpg')
             assert rel is None
             assert abs_path is None
 
-    @patch('app.image_utils.requests.get')
-    def test_download_without_recipe_id(self, mock_get, app, tmp_path):
+    @patch('app.image_utils.requests.Session')
+    def test_download_without_recipe_id(self, mock_session_cls, app, tmp_path):
         """Download without recipe_id generates filename without recipe prefix."""
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
         mock_response = MagicMock()
+        mock_response.status_code = 200
         mock_response.headers = {'Content-Type': 'image/jpeg', 'Content-Length': '100'}
         mock_response.iter_content.return_value = [b'data']
-        mock_get.return_value = mock_response
         mock_response.raise_for_status = MagicMock()
+        mock_session.get.return_value = mock_response
 
         with app.app_context():
             original = app.static_folder
             app.static_folder = str(tmp_path)
             try:
                 rel, abs_path = download_image('https://example.com/photo.jpg')
-                # Without recipe_id, filename starts with 'recipe_' but has a longer hex
                 assert rel.startswith(UPLOAD_SUBDIR + '/recipe_')
             finally:
                 app.static_folder = original

@@ -51,6 +51,35 @@ def is_private_ip(ip_str):
         return True  # Treat unparseable as private to be safe
 
 
+class _SSRFSafeAdapter(requests.adapters.HTTPAdapter):
+    """Re-validates every resolved IP immediately before the TCP connection.
+
+    validate_url() checks DNS at request-validation time, but there is a TOCTOU
+    window between that check and the actual connect(): a DNS rebinding attack
+    can flip the address in that gap. This adapter closes the window by
+    re-resolving and re-checking the IP inside the send() call, which runs
+    synchronously with the connection setup.
+    """
+
+    def send(self, request, *args, **kwargs):
+        parsed = urlparse(request.url)
+        hostname = parsed.hostname
+        port = parsed.port or (443 if parsed.scheme == 'https' else 80)
+        try:
+            infos = socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP)
+        except socket.gaierror as exc:
+            raise requests.exceptions.ConnectionError(
+                f"DNS resolution failed for {hostname!r}: {exc}"
+            )
+        for info in infos:
+            ip = info[4][0]
+            if is_private_ip(ip):
+                raise requests.exceptions.ConnectionError(
+                    f"SSRF blocked: {hostname!r} resolves to private IP {ip}"
+                )
+        return super().send(request, *args, **kwargs)
+
+
 def validate_url(url):
     """Validate a URL for SSRF prevention.
     
@@ -155,19 +184,24 @@ def download_image(image_url, recipe_id=None):
         current_app.logger.warning(f'URL validation failed for {image_url}: {error_msg}')
         return None, None
     
+    _req_headers = {'User-Agent': 'Kitchen-Companion/1.0'}
+    _redirect_codes = {301, 302, 303, 307, 308}
+
     try:
-        response = requests.get(
+        session = requests.Session()
+        session.mount('http://', _SSRFSafeAdapter())
+        session.mount('https://', _SSRFSafeAdapter())
+
+        response = session.get(
             image_url,
             timeout=DOWNLOAD_TIMEOUT,
             stream=True,
             allow_redirects=False,
-            headers={
-                'User-Agent': 'Kitchen-Companion/1.0'
-            }
+            headers=_req_headers,
         )
 
-        # Follow redirects manually so every hop is SSRF-validated.
-        _redirect_codes = {301, 302, 303, 307, 308}
+        # Follow redirects manually so every hop is SSRF-validated by both
+        # validate_url() (fast early rejection) and _SSRFSafeAdapter (TOCTOU guard).
         max_redirects = 5
         hops = 0
         while response.status_code in _redirect_codes and hops < max_redirects:
@@ -178,12 +212,12 @@ def download_image(image_url, recipe_id=None):
                     f'SSRF: blocked redirect to {location!r}: {error_msg}'
                 )
                 return None, None
-            response = requests.get(
+            response = session.get(
                 location,
                 timeout=DOWNLOAD_TIMEOUT,
                 stream=True,
                 allow_redirects=False,
-                headers={'User-Agent': 'Kitchen-Companion/1.0'},
+                headers=_req_headers,
             )
             hops += 1
 
@@ -249,15 +283,16 @@ def _get_extension_from_url(url, content_type=''):
     parsed = urlparse(url)
     path = parsed.path
     
-    # Common image extensions
-    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'}
-    
+    # SVG is intentionally excluded: it can embed JavaScript and would be served
+    # from our own origin, creating a stored-XSS vector.
+    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
+
     # Check if the URL path ends with an image extension
     path_lower = path.lower()
     for ext in image_extensions:
         if path_lower.endswith(ext):
             return ext
-    
+
     # Fall back to content type
     content_type = content_type.lower()
     mime_map = {
@@ -267,7 +302,6 @@ def _get_extension_from_url(url, content_type=''):
         'image/gif': '.gif',
         'image/webp': '.webp',
         'image/bmp': '.bmp',
-        'image/svg+xml': '.svg',
     }
     
     for mime, ext in mime_map.items():

@@ -15,7 +15,7 @@ MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max request body
 
 # Pagination defaults
 DEFAULT_PER_PAGE = 20
-MAX_PER_PAGE = 200
+MAX_PER_PAGE = 200  # TODO: consider lowering (e.g. 100) to reduce response payload size
 
 class Config:
     """Base configuration."""
@@ -54,7 +54,8 @@ class DevelopmentConfig(Config):
 class ProductionConfig(Config):
     """Production configuration."""
     DEBUG = False
-    
+
+    # TODO: call super().__init__() so any future Config validation runs in production too
     def __init__(self):
         if not os.environ.get('SECRET_KEY'):
             raise ValueError("SECRET_KEY must be set in production")
