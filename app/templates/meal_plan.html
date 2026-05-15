@@ -1,0 +1,557 @@
+{% extends "layout.html" %}
+
+{% block title %}Meal Plan - Kitchen Companion{% endblock %}
+
+{% block extra_css %}
+<style>
+    .meal-grid-desktop {
+        display: grid;
+        grid-template-columns: 80px repeat(7, 1fr);
+        grid-template-rows: auto repeat(4, 1fr);
+    }
+    .meal-type-label {
+        writing-mode: vertical-lr;
+        transform: rotate(180deg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .today-column {
+        background-color: rgba(59, 130, 246, 0.05);
+        border: 1px solid rgba(59, 130, 246, 0.2);
+    }
+    .breakfast-bg { background-color: rgba(249, 115, 22, 0.05); }
+    .lunch-bg { background-color: rgba(16, 185, 129, 0.05); }
+    .dinner-bg { background-color: rgba(139, 92, 246, 0.07); }
+    .snack-bg { background-color: rgba(250, 204, 21, 0.06); }
+    .meal-cell {
+        min-height: 90px;
+        transition: all 0.15s ease;
+    }
+    .meal-cell:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    /* Mobile day cards */
+    @media (max-width: 768px) {
+        .meal-grid-desktop { display: none; }
+    }
+    @media (min-width: 769px) {
+        .meal-cards-mobile { display: none; }
+    }
+
+    /* Recipe search in modal */
+    .recipe-search-dropdown {
+        max-height: 240px;
+        overflow-y: auto;
+    }
+    .recipe-search-dropdown button {
+        width: 100%;
+        text-align: left;
+        padding: 0.5rem 1rem;
+        font-size: 0.875rem;
+        color: #374151;
+        border-bottom: 1px solid #f3f4f6;
+    }
+    .recipe-search-dropdown button:hover {
+        background-color: #f9fafb;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="p-4 md:p-6 max-w-7xl mx-auto">
+    <!-- Header & Navigation -->
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
+        <h1 class="text-2xl md:text-3xl font-bold text-gray-900 flex items-center">
+            <span class="text-3xl mr-3">📅</span>Meal Plan
+        </h1>
+        <div class="flex items-center gap-2 flex-wrap">
+            <button id="nav-prev" class="px-4 py-2 text-sm font-medium text-gray-600 bg-white rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
+                ← Prev Week
+            </button>
+            <button id="nav-today" class="px-4 py-2 text-sm font-medium text-primary-600 bg-primary-50 rounded-xl border border-primary-200 hover:bg-primary-100 transition-colors font-semibold">
+                Today
+            </button>
+            <button id="nav-next" class="px-4 py-2 text-sm font-medium text-gray-600 bg-white rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
+                Next Week →
+            </button>
+        </div>
+    </div>
+
+    <!-- Week Label -->
+    <h2 id="week-label" class="text-lg font-semibold text-gray-700 mb-4">Loading...</h2>
+
+    <!-- Desktop Grid View -->
+    <div class="meal-grid-desktop bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <!-- Corner cell -->
+        <div class="p-2 border-b border-r border-gray-100 bg-gray-50"></div>
+        <!-- Day headers -->
+        <div id="day-headers" class="contents"></div>
+        <!-- Meal rows -->
+        <div id="meal-rows" class="contents"></div>
+    </div>
+
+    <!-- Mobile Day Cards View -->
+    <div id="meal-cards-mobile" class="meal-cards-mobile space-y-4"></div>
+
+    <!-- Loading State -->
+    <div id="loading-state" class="text-center py-16">
+        <div class="animate-pulse text-4xl mb-4">📅</div>
+        <p class="text-gray-400">Loading meal plan...</p>
+    </div>
+</div>
+
+<!-- Meal Edit Modal -->
+<div id="meal-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/40" onclick="closeModal()"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 id="modal-title" class="text-lg font-bold text-gray-900">Edit Meal</h3>
+                <button onclick="closeModal()" class="p-2 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Recipe selector -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Recipe</label>
+                <div class="relative">
+                    <input type="text" id="recipe-search-input"
+                        class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        placeholder="Search recipes..."
+                        autocomplete="off">
+                    <div id="recipe-search-dropdown"
+                        class="hidden recipe-search-dropdown absolute top-full left-0 right-0 mt-1 bg-white rounded-xl border border-gray-200 shadow-lg z-10">
+                    </div>
+                </div>
+                <input type="hidden" id="selected-recipe-id">
+                <p id="selected-recipe-label" class="text-sm text-primary-600 mt-1 hidden">
+                    Selected: <span id="selected-recipe-name"></span>
+                    <button onclick="clearRecipe()" class="text-xs text-red-500 hover:underline ml-2">Clear</button>
+                </p>
+            </div>
+
+            <!-- Notes -->
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                <textarea id="modal-notes"
+                    class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+                    rows="3"
+                    placeholder="e.g., double the sauce, serve with rice..."
+                    maxlength="500"></textarea>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="flex gap-3">
+                <button id="modal-save-btn"
+                    class="flex-1 px-4 py-3 bg-primary-600 text-white font-semibold rounded-xl hover:bg-primary-700 transition-colors">
+                    Save
+                </button>
+                <button id="modal-delete-btn"
+                    class="px-4 py-3 text-red-600 font-medium rounded-xl hover:bg-red-50 transition-colors">
+                    Delete
+                </button>
+                <button onclick="closeModal()"
+                    class="px-4 py-3 text-gray-500 font-medium rounded-xl hover:bg-gray-100 transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let state = {
+        currentWeek: '',
+        recipes: [],  // all recipes for search
+        planData: null,
+        editing: null  // { date, meal_type, mp_id, recipe_id, notes }
+    };
+
+    const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const DAY_NAMES_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack'];
+    const MEAL_LABELS = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack' };
+    const MEAL_EMOJI = { breakfast: '🌅', lunch: '☀️', dinner: '🌙', snack: '🍿' };
+    const MEAL_BG_CLASSES = {
+        breakfast: 'breakfast-bg',
+        lunch: 'lunch-bg',
+        dinner: 'dinner-bg',
+        snack: 'snack-bg'
+    };
+
+    function isToday(dateStr) {
+        const today = new Date().toISOString().slice(0, 10);
+        return dateStr === today;
+    }
+
+    function formatDateRange(start, end) {
+        const opts = { month: 'long', day: 'numeric' };
+        const startDate = new Date(start + 'T00:00:00');
+        const endDate = new Date(end + 'T00:00:00');
+        if (startDate.getFullYear() !== endDate.getFullYear()) {
+            return `${startDate.toLocaleDateString('en-US', { ...opts, year: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`;
+        }
+        return `${startDate.toLocaleDateString('en-US', opts)} - ${endDate.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}, ${startDate.getFullYear()}`;
+    }
+
+    async function loadRecipes() {
+        try {
+            const resp = await fetch('/recipes/simple');
+            state.recipes = await resp.json();
+        } catch (e) {
+            console.error('Failed to load recipes:', e);
+        }
+    }
+
+    async function loadMealPlan(weekStr) {
+        document.getElementById('loading-state').classList.remove('hidden');
+        document.querySelector('.meal-grid-desktop').classList.add('hidden');
+        document.getElementById('meal-cards-mobile').classList.add('hidden');
+
+        try {
+            const url = `/meal-plan/data?week=${weekStr}`;
+            const resp = await fetch(url);
+            state.planData = await resp.json();
+            state.currentWeek = state.planData.this_week;
+            render();
+        } catch (e) {
+            console.error('Failed to load meal plan:', e);
+            document.getElementById('loading-state').innerHTML =
+                '<p class="text-red-400">Failed to load meal plan</p>';
+        }
+    }
+
+    function render() {
+        const data = state.planData;
+        document.getElementById('loading-state').classList.add('hidden');
+
+        // Week label
+        document.getElementById('week-label').textContent =
+            `Week of ${formatDateRange(data.start_date, data.end_date)}`;
+
+        // Update URL
+        const url = new URL(window.location);
+        url.searchParams.set('week', state.currentWeek);
+        window.history.replaceState({}, '', url);
+
+        // Gather all dates in order
+        const dates = Object.keys(data.plan_by_date).sort();
+
+        renderDesktop(dates, data);
+        renderMobile(dates, data);
+
+        // Show appropriate view
+        if (window.innerWidth >= 769) {
+            document.querySelector('.meal-grid-desktop').classList.remove('hidden');
+            document.getElementById('meal-cards-mobile').classList.add('hidden');
+        } else {
+            document.querySelector('.meal-grid-desktop').classList.add('hidden');
+            document.getElementById('meal-cards-mobile').classList.remove('hidden');
+        }
+    }
+
+    function renderDesktop(dates, data) {
+        // Day headers
+        const headers = dates.map((d, i) => {
+            const dayDate = new Date(d + 'T00:00:00');
+            const dayNum = dayDate.getDate();
+            const dayName = DAY_NAMES_SHORT[i];
+            const todayClass = isToday(d) ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600';
+            return `<div class="p-3 text-center border-b border-gray-100 ${i === 0 ? '' : 'border-l'} ${todayClass}">
+                <div class="text-xs font-medium uppercase">${dayName}</div>
+                <div class="text-lg font-bold">${dayNum}</div>
+            </div>`;
+        }).join('');
+        document.getElementById('day-headers').innerHTML = headers;
+
+        // Meal rows
+        const rows = MEAL_TYPES.map(mt => {
+            const cells = dates.map((d, i) => {
+                const entry = (data.plan_by_date[d] || {})[mt];
+                const todayClass = isToday(d) ? 'today-column' : '';
+                const bgClass = MEAL_BG_CLASSES[mt];
+                const borderClass = i > 0 ? 'border-l' : '';
+
+                let content;
+                if (entry && entry.recipe_id) {
+                    content = `
+                        <div class="w-full h-full flex flex-col p-3 cursor-pointer ${todayClass} ${bgClass}"
+                             onclick="openModal('${d}', '${mt}', ${entry.id}, ${entry.recipe_id || 'null'}, '${(entry.notes || '').replace(/'/g, "\\'")}')">
+                            <span class="text-sm font-medium text-gray-800 leading-snug line-clamp-2">${escapeHtml(entry.recipe_title || 'Recipe')}</span>
+                            ${entry.notes ? `<span class="text-xs text-gray-400 mt-1 line-clamp-1">${escapeHtml(entry.notes)}</span>` : ''}
+                            <button onclick="event.stopPropagation(); deleteMeal(${entry.id})"
+                                class="mt-auto self-end p-1 text-gray-300 hover:text-red-500 rounded-lg"
+                                title="Remove">✕</button>
+                        </div>`;
+                } else if (entry && entry.notes) {
+                    content = `
+                        <div class="w-full h-full flex flex-col p-3 cursor-pointer ${todayClass} ${bgClass}"
+                             onclick="openModal('${d}', '${mt}', ${entry.id || 'null'}, null, '${(entry.notes || '').replace(/'/g, "\\'")}')">
+                            <span class="text-sm text-gray-600 italic">Notes only</span>
+                            <span class="text-xs text-gray-400 mt-1 line-clamp-1">${escapeHtml(entry.notes)}</span>
+                            <button onclick="event.stopPropagation(); deleteMeal(${entry.id})"
+                                class="mt-auto self-end p-1 text-gray-300 hover:text-red-500 rounded-lg"
+                                title="Remove">✕</button>
+                        </div>`;
+                } else {
+                    content = `
+                        <div class="w-full h-full flex items-center justify-center p-3 cursor-pointer ${todayClass} ${bgClass}"
+                             onclick="openModal('${d}', '${mt}', null, null, '')">
+                            <span class="text-2xl text-gray-300 hover:text-primary-500 transition-colors">+</span>
+                        </div>`;
+                }
+                return `<div class="meal-cell border-b border-gray-50 ${borderClass} min-h-[90px]">${content}</div>`;
+            }).join('');
+
+            const label = `
+                <div class="meal-type-label p-2 border-b border-r border-gray-100 bg-gray-50/50 ${MEAL_BG_CLASSES[mt]} text-gray-500">
+                    ${MEAL_LABELS[mt]}
+                </div>`;
+
+            return `<div class="contents" style="grid-row: span 1;">${label}${cells}</div>`;
+        }).join('');
+
+        document.getElementById('meal-rows').innerHTML = rows;
+    }
+
+    function renderMobile(dates, data) {
+        const cards = dates.map(d => {
+            const dayDate = new Date(d + 'T00:00:00');
+            const dayName = DAY_NAMES[dayDate.getDay() === 0 ? 6 : dayDate.getDay() - 1]; // adjust for Mon start
+            // Actually just use the index
+            const idx = dates.indexOf(d);
+            const todayLabel = isToday(d) ? ' • <span class="text-blue-600 font-semibold">Today</span>' : '';
+
+            const slots = MEAL_TYPES.map(mt => {
+                const entry = (data.plan_by_date[d] || {})[mt];
+                const bgClass = MEAL_BG_CLASSES[mt];
+
+                if (entry && entry.recipe_id) {
+                    return `
+                        <div class="flex items-center justify-between px-4 py-3 ${bgClass} rounded-xl cursor-pointer"
+                             onclick="openModal('${d}', '${mt}', ${entry.id}, ${entry.recipe_id || 'null'}, '${(entry.notes || '').replace(/'/g, "\\'")}')">
+                            <div class="flex items-center gap-2 flex-1 min-w-0">
+                                <span class="text-xs font-medium text-gray-500 w-16">${MEAL_LABELS[mt]}</span>
+                                <span class="text-sm font-medium text-gray-800 truncate">${escapeHtml(entry.recipe_title || 'Recipe')}</span>
+                            </div>
+                            <button onclick="event.stopPropagation(); deleteMeal(${entry.id})"
+                                class="p-1 text-gray-300 hover:text-red-500 rounded-lg"
+                                title="Remove">✕</button>
+                        </div>`;
+                } else {
+                    return `
+                        <div class="flex items-center px-4 py-3 ${bgClass} rounded-xl cursor-pointer"
+                             onclick="openModal('${d}', '${mt}', null, null, '')">
+                            <span class="text-xs font-medium text-gray-500 w-16">${MEAL_LABELS[mt]}</span>
+                            <span class="text-lg text-gray-300 hover:text-primary-500 transition-colors">+</span>
+                        </div>`;
+                }
+            }).join('');
+
+            return `
+                <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div class="px-4 py-3 bg-gray-50/50 border-b border-gray-100">
+                        <span class="font-semibold text-gray-700">${DAY_NAMES_SHORT[idx]} ${dayDate.getDate()}</span>${todayLabel}
+                    </div>
+                    <div class="p-3 space-y-2">${slots}</div>
+                </div>`;
+        }).join('');
+
+        document.getElementById('meal-cards-mobile').innerHTML = cards;
+    }
+
+    // ── Modal ─────────────────────────────────────────────────────────
+    let allRecipesCache = [];
+
+    function openModal(date, mealType, mpId, recipeId, notes) {
+        state.editing = { date, meal_type: mealType, mp_id: mpId, recipe_id: recipeId, notes: notes };
+        document.getElementById('modal-title').textContent =
+            `${MEAL_EMOJI[mealType]} ${MEAL_LABELS[mealType]} — ${date}`;
+
+        // Reset
+        document.getElementById('recipe-search-input').value = '';
+        document.getElementById('selected-recipe-id').value = '';
+        document.getElementById('selected-recipe-label').classList.add('hidden');
+        document.getElementById('modal-notes').value = notes || '';
+        document.getElementById('recipe-search-dropdown').classList.add('hidden');
+
+        // If editing existing with recipe, pre-fill
+        if (recipeId) {
+            document.getElementById('selected-recipe-id').value = recipeId;
+            const recipe = state.recipes.find(r => r.id === recipeId);
+            if (recipe) {
+                document.getElementById('selected-recipe-name').textContent = recipe.title;
+                document.getElementById('selected-recipe-label').classList.remove('hidden');
+                document.getElementById('recipe-search-input').value = recipe.title;
+            }
+        }
+
+        document.getElementById('meal-modal').classList.remove('hidden');
+        setTimeout(() => document.getElementById('recipe-search-input').focus(), 100);
+    }
+
+    function closeModal() {
+        document.getElementById('meal-modal').classList.add('hidden');
+        state.editing = null;
+    }
+
+    function clearRecipe() {
+        document.getElementById('selected-recipe-id').value = '';
+        document.getElementById('selected-recipe-label').classList.add('hidden');
+        document.getElementById('recipe-search-input').value = '';
+    }
+
+    // Recipe search
+    document.getElementById('recipe-search-input').addEventListener('input', function() {
+        const query = this.value.toLowerCase().trim();
+        const dropdown = document.getElementById('recipe-search-dropdown');
+
+        if (!query) {
+            dropdown.classList.add('hidden');
+            return;
+        }
+
+        const filtered = state.recipes.filter(r =>
+            r.title.toLowerCase().includes(query)
+        ).slice(0, 12);
+
+        if (filtered.length === 0) {
+            dropdown.innerHTML = '<div class="px-4 py-2 text-sm text-gray-400">No recipes found</div>';
+        } else {
+            dropdown.innerHTML = filtered.map(r => `
+                <button type="button" onclick="selectRecipe(${r.id}, '${escapeHtml(r.title).replace(/'/g, "\\'")}')">
+                    ${escapeHtml(r.title)}
+                </button>
+            `).join('');
+        }
+        dropdown.classList.remove('hidden');
+    });
+
+    function selectRecipe(id, title) {
+        document.getElementById('selected-recipe-id').value = id;
+        document.getElementById('selected-recipe-name').textContent = title;
+        document.getElementById('selected-recipe-label').classList.remove('hidden');
+        document.getElementById('recipe-search-input').value = title;
+        document.getElementById('recipe-search-dropdown').classList.add('hidden');
+    }
+
+    // Close recipe dropdown on outside click
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#recipe-search-input') && !e.target.closest('#recipe-search-dropdown')) {
+            document.getElementById('recipe-search-dropdown').classList.add('hidden');
+        }
+    });
+
+    // Save meal
+    document.getElementById('modal-save-btn').addEventListener('click', async () => {
+        if (!state.editing) return;
+
+        const recipeId = document.getElementById('selected-recipe-id').value || null;
+        const notes = document.getElementById('modal-notes').value.trim();
+
+        try {
+            const body = {
+                date: state.editing.date,
+                meal_type: state.editing.meal_type,
+                recipe_id: recipeId ? parseInt(recipeId) : null,
+                notes: notes || null
+            };
+
+            const resp = await fetch('/meal-plan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+
+            if (!resp.ok) throw new Error('Failed');
+            closeModal();
+            await loadMealPlan(state.currentWeek);
+        } catch (e) {
+            console.error('Failed to save meal:', e);
+            alert('Failed to save meal plan');
+        }
+    });
+
+    // Delete meal
+    document.getElementById('modal-delete-btn').addEventListener('click', async () => {
+        if (!state.editing || !state.editing.mp_id) {
+            closeModal();
+            return;
+        }
+
+        try {
+            const resp = await fetch(`/meal-plan/${state.editing.mp_id}`, {
+                method: 'DELETE'
+            });
+            if (!resp.ok && resp.status !== 204) throw new Error('Failed');
+            closeModal();
+            await loadMealPlan(state.currentWeek);
+        } catch (e) {
+            console.error('Failed to delete meal:', e);
+        }
+    });
+
+    async function deleteMeal(mpId) {
+        if (!confirm('Remove this meal from the plan?')) return;
+        try {
+            await fetch(`/meal-plan/${mpId}`, { method: 'DELETE' });
+            await loadMealPlan(state.currentWeek);
+        } catch (e) {
+            console.error('Failed to delete meal:', e);
+        }
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // ── Navigation ────────────────────────────────────────────────────
+
+    document.getElementById('nav-prev').addEventListener('click', () => {
+        loadMealPlan(state.planData.prev_week);
+    });
+
+    document.getElementById('nav-next').addEventListener('click', () => {
+        loadMealPlan(state.planData.next_week);
+    });
+
+    document.getElementById('nav-today').addEventListener('click', () => {
+        loadMealPlan(state.planData.current_week);
+    });
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+        if (state.planData) render();
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        if (document.getElementById('meal-modal').classList.contains('hidden')) return;
+        if (e.key === 'Escape') closeModal();
+        if (e.key === 'Enter' && e.target.id !== 'recipe-search-input') {
+            document.getElementById('modal-save-btn').click();
+        }
+    });
+
+    // ── Init ──────────────────────────────────────────────────────────
+    async function init() {
+        await loadRecipes();
+        const urlParams = new URLSearchParams(window.location.search);
+        const weekParam = urlParams.get('week');
+        await loadMealPlan(weekParam || '');
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+</script>
+{% endblock %}

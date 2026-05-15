@@ -68,6 +68,14 @@ class Recipe(db.Model):
         cascade='all, delete-orphan',
         order_by='Note.created_at.desc()'
     )
+
+    # One-to-many relationship with meal plans
+    meal_plans = db.relationship(
+        'MealPlan',
+        back_populates='recipe',
+        lazy='dynamic',
+        cascade='all, delete-orphan'
+    )
     
     @property
     def total_time(self):
@@ -236,6 +244,281 @@ class Note(db.Model):
         return f'<Note {self.id} for Recipe {self.recipe_id}>'
 
 
+# ── Aisle classification keyword mappings ──────────────────────────────
+
+# Keyword → aisle name.  Checked in order; first match wins.
+_AISLE_KEYWORDS = [
+    # Produce
+    (['lettuce', 'spinach', 'kale', 'arugula', 'cabbage', 'broccoli', 'cauliflower',
+      'carrot', 'celery', 'cucumber', 'zucchini', 'bell pepper', 'pepper', 'tomato',
+      'onion', 'garlic', 'ginger', 'potato', 'sweet potato', 'avocado', 'mushroom',
+      'corn', 'green bean', 'peas', 'asparagus', 'brussels sprout', 'radish',
+      'beet', 'leek', 'scallion', 'green onion', 'shallot', 'squash', 'eggplant',
+      'pumpkin', 'parsnip', 'turnip', 'rutabaga', 'artichoke', 'okra',
+      'fruit', 'apple', 'banana', 'orange', 'lemon', 'lime', 'grape', 'berry',
+      'strawberry', 'blueberry', 'raspberry', 'blackberry', 'mango', 'pineapple',
+      'peach', 'pear', 'plum', 'cherry', 'watermelon', 'cantaloupe', 'melon',
+      'kiwi', 'pomegranate', 'coconut', 'herb', 'basil', 'cilantro', 'parsley',
+      'mint', 'rosemary', 'thyme', 'dill', 'sage', 'oregano', 'chive',
+      'salad', 'greens'], 'Produce'),
+
+    # Meat & Seafood
+    (['chicken', 'beef', 'pork', 'lamb', 'turkey', 'duck', 'bacon', 'sausage',
+      'ham', 'steak', 'ground beef', 'ground pork', 'ground turkey', 'ground chicken',
+      'veal', 'venison', 'bison', 'prosciutto', 'salami', 'pepperoni',
+      'fish', 'salmon', 'tuna', 'cod', 'tilapia', 'halibut', 'trout', 'sardine',
+      'anchovy', 'mahi', 'sea bass', 'snapper', 'catfish', 'swordfish',
+      'shrimp', 'prawn', 'crab', 'lobster', 'mussel', 'clam', 'oyster', 'scallop',
+      'calamari', 'squid', 'octopus', 'roe', 'caviar',
+      'meat', 'seafood', 'steak', 'roast', 'chop', 'fillet', 'loin', 'rib',
+      'wing', 'drumstick', 'thigh', 'breast'], 'Meat & Seafood'),
+
+    # Deli
+    (['deli', 'lunch meat', 'cold cut', 'bologna', 'pastrami', 'mortadella',
+      'roast beef', 'corned beef', 'pâté', 'terrine', 'olive bar',
+      'hummus', 'prepared', 'ready-to-eat', 'sandwich'], 'Deli'),
+
+    # Dairy
+    (['milk', 'cream', 'butter', 'cheese', 'yogurt', 'sour cream', 'cream cheese',
+      'mascarpone', 'ricotta', 'mozzarella', 'cheddar', 'parmesan', 'feta',
+      'brie', 'gouda', 'swiss', 'provolone', 'colby', 'monterey jack',
+      'blue cheese', 'goat cheese', 'paneer', 'quark', 'buttermilk',
+      'half and half', 'half-and-half', 'whipping cream', 'heavy cream',
+      'ice cream', 'egg', 'eggs', 'egg substitute', 'margarine',
+      'dairy', 'whey', 'casein', 'lactose'], 'Dairy'),
+
+    # Bakery
+    (['bread', 'roll', 'bagel', 'croissant', 'brioche', 'baguette', 'ciabatta',
+      'sourdough', 'rye', 'pita', 'naan', 'tortilla', 'wrap', 'bun',
+      'english muffin', 'muffin', 'scone', 'doughnut', 'donut', 'pastry',
+      'cake', 'pie', 'cookie', 'brownie', 'cracker', 'baking',
+      'baked good', 'baker'], 'Bakery'),
+
+    # Grains & Pasta
+    (['pasta', 'spaghetti', 'penne', 'fusilli', 'linguine', 'fettuccine',
+      'macaroni', 'lasagna', 'ravioli', 'tortellini', 'gnocchi', 'noodle',
+      'ramen', 'udon', 'soba', 'rice noodle', 'rice paper',
+      'rice', 'quinoa', 'couscous', 'barley', 'farro', 'oats', 'oatmeal',
+      'grits', 'polenta', 'cornmeal', 'cereal', 'granola', 'muesli',
+      'flour', 'breadcrumb', 'panko', 'grain', 'wheat', 'bulgur',
+      'millet', 'amaranth', 'buckwheat', 'semolina'], 'Grains & Pasta'),
+
+    # Canned Goods
+    (['canned', 'tin', 'jarred', 'canned tomato', 'canned bean', 'canned soup',
+      'canned tuna', 'canned salmon', 'canned corn', 'canned pea',
+      'tomato paste', 'tomato sauce', 'coconut milk', 'broth', 'stock',
+      'sardine', 'anchovy', 'bean', 'chickpea', 'lentil', 'kidney bean',
+      'black bean', 'pinto bean', 'cannellini', 'navy bean', 'lima bean',
+      'baked bean', 'refried bean'], 'Canned Goods'),
+
+    # Spices
+    (['salt', 'pepper', 'cumin', 'coriander', 'turmeric', 'paprika', 'chili powder',
+      'cinnamon', 'nutmeg', 'clove', 'cardamom', 'allspice', 'ginger powder',
+      'garlic powder', 'onion powder', 'bay leaf', 'mustard seed', 'fennel seed',
+      'fenugreek', 'star anise', 'saffron', 'vanilla extract', 'vanilla bean',
+      'almond extract', 'seasoning', 'spice', 'spice blend', 'garam masala',
+      'curry powder', 'five spice', 'za\'atar', 'sumac', 'oregano dried',
+      'thyme dried', 'basil dried', 'rosemary dried', 'dill dried',
+      'red pepper flake', 'crushed red pepper', 'cayenne', 'smoked paprika'], 'Spices'),
+
+    # Condiments & Sauces
+    (['ketchup', 'mustard', 'mayonnaise', 'mayo', 'relish', 'hot sauce', 'sriracha',
+      'soy sauce', 'tamari', 'fish sauce', 'oyster sauce', 'hoisin', 'worcestershire',
+      'vinegar', 'balsamic', 'apple cider vinegar', 'rice vinegar', 'wine vinegar',
+      'olive oil', 'vegetable oil', 'canola oil', 'sesame oil', 'peanut oil',
+      'avocado oil', 'coconut oil', 'cooking spray', 'pam',
+      'bbq sauce', 'barbecue sauce', 'steak sauce', 'a1', 'teriyaki',
+      'salsa', 'pico', 'guacamole', 'pickle', 'chutney', 'marmalade',
+      'jam', 'jelly', 'preserves', 'honey', 'maple syrup', 'agave',
+      'molasses', 'corn syrup', 'syrup', 'condiment', 'sauce', 'dressing',
+      'salad dressing', 'vinaigrette', 'marinade', 'dip', 'pesto',
+      'tahini', 'miso', 'gochujang', 'harissa', 'sambal',
+      'capers', 'olive'], 'Condiments & Sauces'),
+
+    # Frozen
+    (['frozen', 'freezer', 'ice cream', 'popsicle', 'frozen vegetable',
+      'frozen fruit', 'frozen pizza', 'frozen dinner', 'frozen meal',
+      'tv dinner', 'waffle', 'frozen waffle', 'tater tot', 'french fry',
+      'frozen fish', 'fish stick', 'frozen shrimp', 'frozen berry',
+      'sorbet', 'gelato', 'frozen yogurt'], 'Frozen'),
+
+    # Beverages
+    (['coffee', 'tea', 'juice', 'soda', 'pop', 'water', 'sparkling water',
+      'tonic', 'seltzer', 'club soda', 'mineral water', 'soft drink',
+      'energy drink', 'sports drink', 'lemonade', 'iced tea',
+      'hot chocolate', 'cocoa', 'milk alternative', 'almond milk',
+      'oat milk', 'soy milk', 'coconut water', 'kombucha',
+      'beer', 'wine', 'liquor', 'spirit', 'whiskey', 'vodka', 'rum',
+      'gin', 'tequila', 'champagne', 'prosecco', 'beverage', 'drink'], 'Beverages'),
+
+    # International
+    (['soy', 'tofu', 'tempeh', 'kimchi', 'seaweed', 'nori', 'wakame',
+      'rice cake', 'mochi', 'daikon', 'bok choy', 'napa cabbage', 'choy',
+      'wasabi', 'pickled ginger', 'mirin', 'sake', 'dashi',
+      'curry paste', 'curry', 'tikka', 'masala', 'naan bread',
+      'sambal oelek', 'sambal', 'kecap manis', 'shrimp paste',
+      'tortilla', 'salsa verde', 'chipotle', 'taco', 'enchilada',
+      'mole', 'adobo', 'sofrito', 'goya', 'latino',
+      'pho', 'bahn', 'wonton', 'dumpling', 'spring roll', 'egg roll',
+      'international', 'ethnic', 'asian', 'latin', 'mediterranean',
+      'halal', 'kosher'], 'International'),
+
+    # Health & Beauty
+    (['shampoo', 'conditioner', 'soap', 'body wash', 'deodorant', 'toothpaste',
+      'toothbrush', 'floss', 'mouthwash', 'lotion', 'sunscreen', 'razor',
+      'shaving', 'tampon', 'pad', 'tissue', 'paper towel', 'toilet paper',
+      'laundry', 'detergent', 'bleach', 'cleaner', 'cleaning', 'dish soap',
+      'sponge', 'trash bag', 'ziploc', 'aluminum foil', 'plastic wrap',
+      'parchment paper', 'wax paper', 'band-aid', 'first aid', 'medicine',
+      'vitamin', 'supplement', 'pain reliever', 'aspirin', 'ibuprofen',
+      'acetaminophen', 'allergy', 'cold medicine'], 'Health & Beauty'),
+
+    # Household
+    (['battery', 'light bulb', 'hardware', 'tool', 'duct tape', 'glue',
+      'extension cord', 'air freshener', 'candle', 'pet food', 'dog food',
+      'cat food', 'cat litter', 'bird seed', 'plant', 'potting soil',
+      'gardening', 'office supply', 'pen', 'paper', 'envelope', 'broom',
+      'mop', 'vacuum bag'], 'Household'),
+]
+
+
+def classify_aisle(item_name):
+    """Classify a shopping item name into a default aisle name using keyword matching.
+
+    Args:
+        item_name: The shopping item name string.
+
+    Returns:
+        Aisle name string (e.g. 'Produce', 'Dairy'). Returns 'Other' if no match.
+    """
+    if not item_name:
+        return 'Other'
+    name_lower = item_name.lower().strip()
+    for keywords, aisle_name in _AISLE_KEYWORDS:
+        for kw in keywords:
+            if kw in name_lower:
+                return aisle_name
+    return 'Other'
+
+
+DEFAULT_AISLES = [
+    'Produce', 'Meat & Seafood', 'Deli', 'Dairy', 'Bakery',
+    'Grains & Pasta', 'Canned Goods', 'Spices', 'Condiments & Sauces',
+    'Frozen', 'Beverages', 'International', 'Health & Beauty',
+    'Household', 'Other'
+]
+
+
+class Store(db.Model):
+    """Grocery store model with per-store aisle layouts and item overrides.
+
+    Attributes:
+        id: Unique identifier
+        name: Store display name (e.g. "Safeway #1234")
+        created_at: Creation timestamp
+    """
+    __tablename__ = 'stores'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+
+    aisles = db.relationship(
+        'StoreAisle', backref='store', lazy='select',
+        cascade='all, delete-orphan',
+        order_by='StoreAisle.sort_order'
+    )
+    overrides = db.relationship(
+        'AisleOverride', backref='store', lazy='dynamic',
+        cascade='all, delete-orphan'
+    )
+
+    def to_dict(self, include_aisles=False):
+        d = {
+            'id': self.id,
+            'name': self.name,
+            'aisle_count': len(self.aisles) if self.aisles else 0,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_aisles:
+            d['aisles'] = [a.to_dict() for a in self.aisles]
+        return d
+
+    def __repr__(self):
+        return f'<Store {self.name}>'
+
+
+class StoreAisle(db.Model):
+    """Aisle within a specific store, ordered by sort_order.
+
+    Attributes:
+        id: Unique identifier
+        store_id: FK to the parent store
+        name: Display name (e.g. "Produce", "Deli")
+        sort_order: Ordering position within the store
+    """
+    __tablename__ = 'store_aisles'
+
+    id = db.Column(db.Integer, primary_key=True)
+    store_id = db.Column(db.Integer, db.ForeignKey('stores.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    sort_order = db.Column(db.Integer, default=0)
+
+    __table_args__ = (
+        db.UniqueConstraint('store_id', 'name', name='uix_store_aisle'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'store_id': self.store_id,
+            'name': self.name,
+            'sort_order': self.sort_order,
+        }
+
+    def __repr__(self):
+        return f'<StoreAisle {self.name} (store={self.store_id})>'
+
+
+class AisleOverride(db.Model):
+    """Per-store override mapping a normalized item name to a specific aisle.
+
+    Allows users to customize where items land (e.g. "tortillas"
+    might be in "International" at one store but "Bakery" at another).
+
+    Attributes:
+        id: Unique identifier
+        store_id: FK to the store this override belongs to
+        item_name_normalized: Lowercase, stripped item name for matching
+        aisle_id: FK to the target StoreAisle
+    """
+    __tablename__ = 'aisle_overrides'
+
+    id = db.Column(db.Integer, primary_key=True)
+    store_id = db.Column(db.Integer, db.ForeignKey('stores.id'), nullable=False)
+    item_name_normalized = db.Column(db.String(200), nullable=False)
+    aisle_id = db.Column(db.Integer, db.ForeignKey('store_aisles.id'), nullable=False)
+
+    aisle_rel = db.relationship('StoreAisle', lazy='joined')
+
+    __table_args__ = (
+        db.UniqueConstraint('store_id', 'item_name_normalized',
+                            name='uix_store_item_override'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'store_id': self.store_id,
+            'item_name_normalized': self.item_name_normalized,
+            'aisle_id': self.aisle_id,
+            'aisle_name': self.aisle_rel.name if self.aisle_rel else None,
+        }
+
+    def __repr__(self):
+        return f'<AisleOverride {self.item_name_normalized} → aisle {self.aisle_id}>'
+
+
 class ShoppingItem(db.Model):
     """Shopping list item model.
     
@@ -246,6 +529,7 @@ class ShoppingItem(db.Model):
         name: Item name (e.g., "2 cups flour")
         recipe_id: Optional FK to the source recipe
         purchased: Whether the item has been checked off
+        aisle_override_id: Optional FK to a per-store aisle override
         created_at: When the item was added
         updated_at: Last update timestamp
     """
@@ -255,6 +539,7 @@ class ShoppingItem(db.Model):
     name = db.Column(db.String(500), nullable=False)
     recipe_id = db.Column(db.Integer, db.ForeignKey('recipes.id'), nullable=True)
     purchased = db.Column(db.Boolean, default=False, index=True)
+    aisle_override_id = db.Column(db.Integer, db.ForeignKey('aisle_overrides.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=_utcnow)
     updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
@@ -265,6 +550,8 @@ class ShoppingItem(db.Model):
         lazy='select'
     )
 
+    aisle_override = db.relationship('AisleOverride', lazy='joined')
+
     def to_dict(self):
         """Convert shopping item to dictionary representation."""
         return {
@@ -273,9 +560,65 @@ class ShoppingItem(db.Model):
             'recipe_id': self.recipe_id,
             'recipe_title': self.recipe.title if self.recipe else None,
             'purchased': self.purchased,
+            'aisle_override_id': self.aisle_override_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
 
     def __repr__(self):
         return f'<ShoppingItem {self.name}>'
+
+
+class MealPlan(db.Model):
+    """Meal plan entry mapping a meal type to a recipe on a specific date.
+
+    Attributes:
+        id: Unique identifier
+        date: The date for this meal
+        meal_type: Type of meal (breakfast, lunch, dinner, snack)
+        recipe_id: FK to the planned recipe (optional)
+        notes: Free-text notes
+        created_at / updated_at: Timestamps
+    """
+    __tablename__ = 'meal_plans'
+
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False, index=True)
+    meal_type = db.Column(db.String(20), nullable=False)
+    recipe_id = db.Column(db.Integer, db.ForeignKey('recipes.id'), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+    recipe = db.relationship('Recipe', back_populates='meal_plans')
+
+    __table_args__ = (
+        db.UniqueConstraint('date', 'meal_type', name='uix_date_meal_type'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'date': self.date.isoformat() if self.date else None,
+            'meal_type': self.meal_type,
+            'recipe_id': self.recipe_id,
+            'recipe_title': self.recipe.title if self.recipe else None,
+            'notes': self.notes,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self):
+        return f'<MealPlan {self.date} {self.meal_type}>'
+
+
+def seed_default_store():
+    """Create the 'Default' store with standard aisles if it doesn't exist."""
+    if not Store.query.filter_by(name='Default').first():
+        store = Store(name='Default')
+        db.session.add(store)
+        db.session.flush()
+        for i, aisle_name in enumerate(DEFAULT_AISLES):
+            aisle = StoreAisle(store_id=store.id, name=aisle_name, sort_order=i)
+            db.session.add(aisle)
+        db.session.commit()

@@ -2,14 +2,48 @@
 
 {% block title %}Shopping List - Kitchen Companion{% endblock %}
 
+{% block extra_css %}
+<style>
+    .aisle-section {
+        border-left-width: 4px;
+        border-left-style: solid;
+    }
+    .aisle-color-0 { border-left-color: #3b82f6; } /* blue */
+    .aisle-color-1 { border-left-color: #10b981; } /* green */
+    .aisle-color-2 { border-left-color: #f59e0b; } /* amber */
+    .aisle-color-3 { border-left-color: #8b5cf6; } /* purple */
+    .aisle-color-4 { border-left-color: #ef4444; } /* red */
+    .aisle-color-5 { border-left-color: #06b6d4; } /* cyan */
+    .aisle-color-6 { border-left-color: #f97316; } /* orange */
+    .aisle-color-7 { border-left-color: #ec4899; } /* pink */
+    .aisle-color-8 { border-left-color: #14b8a6; } /* teal */
+    .aisle-color-9 { border-left-color: #6366f1; } /* indigo */
+    .aisle-color-10 { border-left-color: #84cc16; } /* lime */
+    .aisle-color-11 { border-left-color: #a855f7; } /* violet */
+    .aisle-color-12 { border-left-color: #78716c; } /* stone */
+    .aisle-color-13 { border-left-color: #d946ef; } /* fuchsia */
+    .aisle-color-14 { border-left-color: #64748b; } /* slate */
+
+    .aisle-picker-dropdown {
+        position: absolute;
+        z-index: 50;
+        top: 100%;
+        right: 0;
+        min-width: 200px;
+        max-height: 250px;
+        overflow-y: auto;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="p-4 md:p-8 max-w-3xl mx-auto">
-    <div class="flex items-center justify-between mb-8">
+<div class="p-4 md:p-8 max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-4">
         <h1 class="text-2xl md:text-3xl font-bold text-gray-900 flex items-center">
             <span class="text-3xl mr-3">🛒</span>Shopping List
         </h1>
         <div class="flex gap-2">
-            <button id="clear-purchased-btn" 
+            <button id="clear-purchased-btn"
                 class="px-4 py-2 text-sm font-medium text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
                 title="Remove checked items">
                 Clear Checked
@@ -21,10 +55,66 @@
         </div>
     </div>
 
+    <!-- Store Selector -->
+    <div class="flex items-center gap-3 mb-4 bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+        <div class="flex-1 flex items-center gap-3">
+            <span class="text-sm font-medium text-gray-500 whitespace-nowrap">Store:</span>
+            <select id="store-selector"
+                class="flex-1 max-w-xs px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-base">
+                <option value="">-- Select a store --</option>
+            </select>
+            <span id="aisle-count" class="text-sm text-gray-400 hidden"></span>
+        </div>
+        <div class="flex gap-2">
+            <a href="#" id="manage-stores-link"
+               class="px-3 py-2 text-sm text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-colors"
+               title="Manage stores">
+                ⚙️
+            </a>
+            <button id="new-store-btn"
+                class="px-3 py-2 text-sm bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-colors"
+                title="Create new store">
+                + Store
+            </button>
+        </div>
+    </div>
+
+    <!-- Store Management Panel (hidden by default) -->
+    <div id="store-manager" class="hidden mb-4 bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+        <h3 class="text-sm font-semibold text-gray-700 mb-3">Manage Stores</h3>
+        <div id="store-list" class="space-y-2 mb-3 max-h-48 overflow-y-auto"></div>
+        <form id="create-store-form" class="flex gap-2">
+            <input type="text" id="new-store-name"
+                class="flex-1 px-3 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 text-sm"
+                placeholder="Store name (e.g. Safeway #1234)"
+                maxlength="200">
+            <button type="submit"
+                class="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-xl hover:bg-primary-700 transition-colors">
+                Create
+            </button>
+        </form>
+    </div>
+
+    <!-- Override Import/Export Panel (hidden by default) -->
+    <div id="override-panel" class="hidden mb-4 bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+        <h3 class="text-sm font-semibold text-gray-700 mb-3">Aisle Overrides</h3>
+        <p class="text-xs text-gray-400 mb-3">Export your custom aisle assignments to share or back up.</p>
+        <div class="flex gap-2">
+            <button id="export-overrides-btn"
+                class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-xl hover:bg-gray-200 transition-colors">
+                📤 Export
+            </button>
+            <label class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-xl hover:bg-gray-200 transition-colors cursor-pointer">
+                📥 Import
+                <input type="file" id="import-overrides-input" class="hidden" accept=".json">
+            </label>
+        </div>
+    </div>
+
     <!-- Manual Add Form -->
     <form id="manual-add-form" class="hidden mb-6 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
         <div class="flex gap-3">
-            <input type="text" id="manual-item-input" 
+            <input type="text" id="manual-item-input"
                 class="flex-1 px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-base"
                 placeholder="e.g., 2 lbs chicken thighs"
                 maxlength="500">
@@ -36,69 +126,260 @@
     </form>
 
     <!-- Shopping List -->
-    <div id="shopping-list" class="space-y-3">
-        <!-- Loaded dynamically -->
+    <div id="shopping-list" class="space-y-4">
+        <!-- Loaded dynamically, grouped by aisle -->
     </div>
 
     <!-- Empty State -->
     <div id="empty-state" class="hidden text-center py-16">
         <div class="text-6xl mb-4">🛒</div>
-        <h2 class="text-xl font-semibold text-gray-700 mb-2">Your shopping list is empty</h2>
-        <p class="text-gray-400">Add ingredients from recipes or manually</p>
+        <h2 class="text-xl font-semibold text-gray-700 mb-2" id="empty-title">Create a store to get started</h2>
+        <p class="text-gray-400" id="empty-subtitle">Select a store above to see your organized shopping list</p>
     </div>
 </div>
 
 <script>
-    async function loadShoppingList() {
+    let state = {
+        activeStoreId: null,
+        activeStoreName: null,
+        storeAisles: [],    // [{id, name, sort_order}]
+        collapsedSections: JSON.parse(localStorage.getItem('kc_collapsed_aisles') || '{}')
+    };
+
+    // Load stores on page load
+    async function init() {
+        await loadStores();
+        // Try to load from localStorage
+        const savedStoreId = localStorage.getItem('kc_active_store');
+        if (savedStoreId) {
+            const selector = document.getElementById('store-selector');
+            if (selector.querySelector(`option[value="${savedStoreId}"]`)) {
+                selector.value = savedStoreId;
+                await onStoreChange(savedStoreId);
+            }
+        }
+    }
+
+    async function loadStores() {
         try {
-            const response = await fetch('/shopping-items');
+            const resp = await fetch('/stores');
+            const stores = await resp.json();
+            const selector = document.getElementById('store-selector');
+            selector.innerHTML = '<option value="">-- Select a store --</option>';
+            stores.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.id;
+                opt.textContent = s.name;
+                selector.appendChild(opt);
+            });
+
+            // Update store management list
+            const storeList = document.getElementById('store-list');
+            storeList.innerHTML = stores.map(s => `
+                <div class="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
+                    <span class="text-sm font-medium text-gray-700">${escapeHtml(s.name)}</span>
+                    <span class="text-xs text-gray-400">${s.aisle_count} aisles</span>
+                    <div class="flex gap-1">
+                        <button onclick="renameStore(${s.id}, '${escapeHtml(s.name)}')"
+                            class="text-xs px-2 py-1 text-gray-400 hover:text-primary-600 rounded-lg"
+                            title="Rename">✏️</button>
+                        <button onclick="editStoreAisles(${s.id})"
+                            class="text-xs px-2 py-1 text-gray-400 hover:text-primary-600 rounded-lg"
+                            title="Edit aisles">📋</button>
+                    </div>
+                </div>
+            `).join('');
+        } catch (e) {
+            console.error('Failed to load stores:', e);
+        }
+    }
+
+    async function onStoreChange(storeId) {
+        state.activeStoreId = storeId ? parseInt(storeId) : null;
+        localStorage.setItem('kc_active_store', storeId || '');
+
+        if (!storeId) {
+            document.getElementById('aisle-count').classList.add('hidden');
+            document.getElementById('override-panel').classList.add('hidden');
+            document.getElementById('shopping-list').innerHTML = '';
+            document.getElementById('empty-state').classList.remove('hidden');
+            document.getElementById('empty-title').textContent = 'Select a store';
+            document.getElementById('empty-subtitle').textContent = 'Choose a store above to see your organized shopping list';
+            return;
+        }
+
+        // Load aisles for this store
+        try {
+            const resp = await fetch(`/aisles?store_id=${storeId}`);
+            state.storeAisles = await resp.json();
+            const count = state.storeAisles.length;
+            document.getElementById('aisle-count').textContent = `${count} aisle${count !== 1 ? 's' : ''}`;
+            document.getElementById('aisle-count').classList.remove('hidden');
+            document.getElementById('override-panel').classList.remove('hidden');
+        } catch (e) {
+            console.error('Failed to load aisles:', e);
+        }
+
+        await loadShoppingList();
+    }
+
+    async function loadShoppingList() {
+        if (!state.activeStoreId) return;
+
+        try {
+            const url = `/shopping-items?store_id=${state.activeStoreId}`;
+            const response = await fetch(url);
             if (!response.ok) throw new Error('Failed to load');
-            const items = await response.json();
-            renderShoppingList(items);
+            const data = await response.json();
+            renderShoppingList(data);
         } catch (error) {
             console.error('Error loading shopping list:', error);
         }
     }
 
-    function renderShoppingList(items) {
+    function getCollapseKey(aisleName) {
+        return `${state.activeStoreId}::${aisleName}`;
+    }
+
+    function renderShoppingList(data) {
         const container = document.getElementById('shopping-list');
         const emptyState = document.getElementById('empty-state');
+        const aisles = data.aisles || [];
+        const store = data.store;
 
-        if (!items || items.length === 0) {
+        if (!aisles.length) {
             container.innerHTML = '';
             emptyState.classList.remove('hidden');
+            document.getElementById('empty-title').textContent = 'Your shopping list is empty';
+            document.getElementById('empty-subtitle').textContent =
+                store ? `Add ingredients from recipes or manually for ${escapeHtml(store.name)}` :
+                'Add ingredients from recipes or manually';
             return;
         }
 
         emptyState.classList.add('hidden');
 
-        container.innerHTML = items.map(item => `
-            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4 flex items-center gap-4 ${item.purchased ? 'opacity-50' : ''}">
-                <input type="checkbox" 
-                    class="w-5 h-5 md:w-6 md:h-6 rounded-lg border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer flex-shrink-0"
-                    ${item.purchased ? 'checked' : ''}
-                    onchange="togglePurchased(${item.id}, this.checked)"
-                >
-                <div class="flex-1 min-w-0">
-                    <p class="text-base md:text-lg text-gray-800 ${item.purchased ? 'line-through' : ''}">${escapeHtml(item.name)}</p>
-                    ${item.recipe_title ? `<p class="text-xs text-gray-400 mt-1">From: ${escapeHtml(item.recipe_title)}</p>` : ''}
+        container.innerHTML = aisles.map((aisle, idx) => {
+            const colorClass = `aisle-color-${idx % 15}`;
+            const collapseKey = getCollapseKey(aisle.name);
+            const collapsed = state.collapsedSections[collapseKey];
+            const items = aisle.items || [];
+            const purchasedCount = items.filter(i => i.purchased).length;
+            const totalCount = items.length;
+
+            return `
+            <div class="aisle-section bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden ${colorClass}">
+                <div class="flex items-center justify-between px-4 py-3 bg-gray-50/50 cursor-pointer"
+                     onclick="toggleSection('${collapseKey}', this)">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-gray-400 transition-transform collapse-icon ${collapsed ? 'rotate-[-90deg]' : ''}"
+                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                        </svg>
+                        <span class="text-sm font-semibold text-gray-800">${escapeHtml(aisle.name)}</span>
+                    </div>
+                    <span class="text-xs text-gray-400">${purchasedCount}/${totalCount}</span>
                 </div>
-                <button onclick="deleteItem(${item.id})"
-                    class="min-w-[44px] min-h-[44px] p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors flex-shrink-0"
-                    title="Remove"
-                    aria-label="Remove item">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                <div class="aisle-items ${collapsed ? 'hidden' : ''}">
+                    ${items.map(item => renderItem(item)).join('')}
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function renderItem(item) {
+        return `
+        <div class="px-4 py-3 border-t border-gray-50 flex items-center gap-3 ${item.purchased ? 'opacity-50' : ''}">
+            <input type="checkbox"
+                class="w-5 h-5 rounded-lg border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer flex-shrink-0"
+                ${item.purchased ? 'checked' : ''}
+                onchange="togglePurchased(${item.id}, this.checked)">
+            <div class="flex-1 min-w-0">
+                <p class="text-base text-gray-800 ${item.purchased ? 'line-through' : ''}">${escapeHtml(item.name)}</p>
+                ${item.recipe_title ? `<p class="text-xs text-gray-400 mt-0.5">From: ${escapeHtml(item.recipe_title)}</p>` : ''}
+            </div>
+            <div class="relative">
+                <button onclick="toggleAislePicker(event, ${item.id})"
+                    class="min-w-[44px] min-h-[44px] p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-colors flex-shrink-0"
+                    title="Change aisle"
+                    aria-label="Change aisle">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path>
                     </svg>
                 </button>
+                <div id="aisle-picker-${item.id}" class="hidden aisle-picker-dropdown bg-white rounded-xl border border-gray-200 shadow-lg">
+                    ${state.storeAisles.map(a => `
+                        <button onclick="changeAisle(${item.id}, ${a.id}); event.stopPropagation();"
+                            class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                            ${escapeHtml(a.name)}
+                        </button>
+                    `).join('')}
+                </div>
             </div>
-        `).join('');
+            <button onclick="deleteItem(${item.id})"
+                class="min-w-[44px] min-h-[44px] p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors flex-shrink-0"
+                title="Remove"
+                aria-label="Remove item">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>`;
     }
 
     function escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    function toggleSection(collapseKey, header) {
+        state.collapsedSections[collapseKey] = !state.collapsedSections[collapseKey];
+        localStorage.setItem('kc_collapsed_aisles', JSON.stringify(state.collapsedSections));
+
+        const itemsDiv = header.nextElementSibling;
+        const icon = header.querySelector('.collapse-icon');
+        if (state.collapsedSections[collapseKey]) {
+            itemsDiv.classList.add('hidden');
+            icon.classList.add('rotate-[-90deg]');
+        } else {
+            itemsDiv.classList.remove('hidden');
+            icon.classList.remove('rotate-[-90deg]');
+        }
+    }
+
+    function toggleAislePicker(event, itemId) {
+        event.stopPropagation();
+        // Close all other pickers
+        document.querySelectorAll('.aisle-picker-dropdown').forEach(el => {
+            if (el.id !== `aisle-picker-${itemId}`) el.classList.add('hidden');
+        });
+        const picker = document.getElementById(`aisle-picker-${itemId}`);
+        picker.classList.toggle('hidden');
+    }
+
+    // Close pickers on outside click
+    document.addEventListener('click', () => {
+        document.querySelectorAll('.aisle-picker-dropdown').forEach(el => el.classList.add('hidden'));
+    });
+
+    async function changeAisle(itemId, aisleId) {
+        try {
+            await fetch(`/shopping-items/${itemId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    aisle_id: aisleId,
+                    store_id: state.activeStoreId
+                })
+            });
+            // Close all pickers
+            document.querySelectorAll('.aisle-picker-dropdown').forEach(el => el.classList.add('hidden'));
+            await loadShoppingList();
+        } catch (error) {
+            console.error('Error changing aisle:', error);
+        }
     }
 
     async function togglePurchased(itemId, purchased) {
@@ -123,7 +404,156 @@
         }
     }
 
-    // Manual add form toggle
+    // ── Store management ──────────────────────────────────────────────
+
+    document.getElementById('manage-stores-link').addEventListener('click', (e) => {
+        e.preventDefault();
+        document.getElementById('store-manager').classList.toggle('hidden');
+        if (!document.getElementById('store-manager').classList.contains('hidden')) {
+            loadStores();
+        }
+    });
+
+    document.getElementById('new-store-btn').addEventListener('click', () => {
+        document.getElementById('store-manager').classList.remove('hidden');
+        document.getElementById('new-store-name').focus();
+        loadStores();
+    });
+
+    document.getElementById('create-store-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const nameInput = document.getElementById('new-store-name');
+        const name = nameInput.value.trim();
+        if (!name) return;
+
+        try {
+            const resp = await fetch('/stores', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            if (!resp.ok) throw new Error('Failed');
+            const store = await resp.json();
+            nameInput.value = '';
+            await loadStores();
+            // Select the new store
+            document.getElementById('store-selector').value = store.id;
+            await onStoreChange(store.id);
+        } catch (error) {
+            console.error('Failed to create store:', error);
+        }
+    });
+
+    document.getElementById('store-selector').addEventListener('change', function() {
+        onStoreChange(this.value);
+    });
+
+    async function renameStore(storeId, currentName) {
+        const newName = prompt('Rename store:', currentName);
+        if (!newName || !newName.trim() || newName.trim() === currentName) return;
+
+        try {
+            await fetch(`/stores/${storeId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newName.trim() })
+            });
+            await loadStores();
+            // Refresh the selector if this is the active store
+            const selector = document.getElementById('store-selector');
+            if (parseInt(selector.value) === storeId) {
+                // Update the option text
+                const opt = selector.querySelector(`option[value="${storeId}"]`);
+                if (opt) opt.textContent = newName.trim();
+            }
+        } catch (e) {
+            console.error('Failed to rename store:', e);
+        }
+    }
+
+    async function editStoreAisles(storeId) {
+        const aisles = state.storeAisles;
+        if (!aisles.length && state.activeStoreId !== storeId) {
+            // Load aisles for this store
+            try {
+                const resp = await fetch(`/aisles?store_id=${storeId}`);
+                aisles.splice(0, aisles.length, ...await resp.json());
+            } catch (e) { return; }
+        }
+        const lines = aisles.map(a => a.name).join('\n');
+        const newText = prompt('Edit aisles (one per line). Delete a line to remove that aisle.', lines);
+        if (newText === null) return;
+
+        const newNames = newText.split('\n').map(l => l.trim()).filter(l => l);
+
+        const payload = newNames.map((name, i) => {
+            const existing = aisles.find(a => a.name === name);
+            return {
+                id: existing ? existing.id : null,
+                name: name,
+                sort_order: i
+            };
+        });
+
+        try {
+            await fetch(`/stores/${storeId}/aisles`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ aisles: payload })
+            });
+            await loadStores();
+            if (state.activeStoreId === storeId) {
+                await onStoreChange(storeId);
+            }
+        } catch (e) {
+            console.error('Failed to update aisles:', e);
+        }
+    }
+
+    // ── Override export/import ────────────────────────────────────────
+
+    document.getElementById('export-overrides-btn').addEventListener('click', async () => {
+        if (!state.activeStoreId) return;
+        try {
+            const resp = await fetch(`/stores/${state.activeStoreId}/overrides`);
+            const overrides = await resp.json();
+            const blob = new Blob([JSON.stringify({ overrides }, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `aisle-overrides-${state.activeStoreName || 'store'}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            console.error('Failed to export overrides:', e);
+        }
+    });
+
+    document.getElementById('import-overrides-input').addEventListener('change', async function() {
+        if (!state.activeStoreId) return;
+        const file = this.files[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            const resp = await fetch(`/stores/${state.activeStoreId}/overrides`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await resp.json();
+            alert(`Imported: ${result.created} created, ${result.updated} updated`);
+            await loadStores();
+            if (state.activeStoreId) await onStoreChange(state.activeStoreId);
+        } catch (e) {
+            console.error('Failed to import overrides:', e);
+            alert('Failed to import overrides. Check the file format.');
+        }
+        this.value = '';
+    });
+
+    // ── Manual add form ───────────────────────────────────────────────
+
     document.getElementById('add-manual-btn').addEventListener('click', () => {
         const form = document.getElementById('manual-add-form');
         form.classList.toggle('hidden');
@@ -132,7 +562,6 @@
         }
     });
 
-    // Manual add submit
     document.getElementById('manual-add-form').addEventListener('submit', async function(e) {
         e.preventDefault();
         const input = document.getElementById('manual-item-input');
@@ -140,10 +569,14 @@
         if (!name) return;
 
         try {
+            const body = {
+                items: [{ name }],
+                store_id: state.activeStoreId
+            };
             const response = await fetch('/shopping-items', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items: [{ name }] })
+                body: JSON.stringify(body)
             });
             if (!response.ok) throw new Error('Failed');
             input.value = '';
@@ -158,12 +591,13 @@
     document.getElementById('clear-purchased-btn').addEventListener('click', async () => {
         try {
             await fetch('/shopping-items/clear-purchased', { method: 'POST' });
-            await loadShoppingList();
+            if (state.activeStoreId) await loadShoppingList();
+            else await init();
         } catch (error) {
             console.error('Error clearing items:', error);
         }
     });
 
-    document.addEventListener('DOMContentLoaded', loadShoppingList);
+    document.addEventListener('DOMContentLoaded', init);
 </script>
 {% endblock %}

@@ -63,6 +63,12 @@ def create_app(config_name='default'):
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(web_bp, url_prefix='/api/auth')
     
+    # Seed default store inside application context (skip in testing)
+    if not app.config.get('TESTING') and not os.environ.get('FLASK_TESTING'):
+        with app.app_context():
+            from app.models import seed_default_store
+            seed_default_store()
+    
     # ── Centralized error handlers ──────────────────────────────────
     
     def _error_ref():

@@ -2,7 +2,9 @@
 from flask import Blueprint, request, jsonify, render_template, redirect, url_for, flash, current_app
 from werkzeug.utils import secure_filename
 from app import db, limiter
-from app.models import Recipe, Tag, Note, ShoppingItem
+from app.models import (Recipe, Tag, Note, ShoppingItem,
+                         Store, StoreAisle, AisleOverride, MealPlan,
+                         classify_aisle, seed_default_store)
 from app.auth import editor_or_admin, admin_required, login_required_web, editor_or_admin_web
 from app.image_utils import download_image, delete_image, validate_url, get_upload_dir
 from config import (
@@ -12,7 +14,7 @@ from config import (
 from sqlalchemy.orm import joinedload, selectinload
 import os
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 
 # Blueprint for main pages
 main_bp = Blueprint('main', __name__)
@@ -41,6 +43,80 @@ def _random_recipes(count: int):
         .filter(Recipe.id.in_(sampled_ids))
         .all()
     )
+
+
+def _normalize_item_name(name):
+    """Return a normalized version of an item name for override lookups."""
+    return name.strip().lower() if name else ''
+
+
+def _resolve_aisle_for_item(item_name, store_id):
+    """Determine the best aisle for an item in a given store.
+
+    Priority:
+    1. AisleOverride for this item name + store
+    2. classify_aisle() keyword matching
+    Returns (aisle_name, override_id_or_None).
+    """
+    normalized = _normalize_item_name(item_name)
+    if normalized and store_id:
+        override = AisleOverride.query.filter_by(
+            store_id=store_id,
+            item_name_normalized=normalized
+        ).first()
+        if override and override.aisle_rel:
+            return override.aisle_rel.name, override.id
+
+    return classify_aisle(item_name), None
+
+
+def _iso_week_to_date_range(iso_week_str):
+    """Convert an ISO week string (e.g. '2026-W20') to (start_date, end_date).
+
+    Weeks start on Monday per ISO 8601.
+    """
+    try:
+        year, week = iso_week_str.split('-W')
+        year, week = int(year), int(week)
+    except (ValueError, TypeError):
+        return _current_iso_week_range()
+
+    # Find the Monday of that ISO week
+    jan4 = date(year, 1, 4)
+    # Monday of week containing Jan 4
+    monday = jan4 - timedelta(days=jan4.weekday())
+    target_monday = monday + timedelta(weeks=week - 1)
+    return target_monday, target_monday + timedelta(days=6)
+
+
+def _current_iso_week_range():
+    """Return (monday, sunday) for the current ISO week."""
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    return monday, monday + timedelta(days=6)
+
+
+def _current_iso_week():
+    """Return the current ISO week string (e.g. '2026-W20')."""
+    today = date.today()
+    iso = today.isocalendar()
+    return f'{iso[0]}-W{iso[1]:02d}'
+
+
+def _next_iso_week(iso_week_str):
+    """Return the next ISO week string."""
+    start, _ = _iso_week_to_date_range(iso_week_str)
+    nxt = start + timedelta(weeks=1)
+    iso = nxt.isocalendar()
+    return f'{iso[0]}-W{iso[1]:02d}'
+
+
+def _prev_iso_week(iso_week_str):
+    """Return the previous ISO week string."""
+    start, _ = _iso_week_to_date_range(iso_week_str)
+    prv = start - timedelta(weeks=1)
+    iso = prv.isocalendar()
+    return f'{iso[0]}-W{iso[1]:02d}'
 
 
 # ============================================================================
@@ -105,10 +181,207 @@ def api_docs():
 @main_bp.route('/shopping-list')
 def shopping_list():
     """Render the shopping list page."""
-    items = ShoppingItem.query.options(
-        joinedload(ShoppingItem.recipe)
-    ).order_by(ShoppingItem.purchased.asc(), ShoppingItem.created_at.desc()).all()
-    return render_template('shopping_list.html', items=items)
+    # Pass all stores for the store selector
+    stores = Store.query.order_by(Store.name).all()
+    default_store = Store.query.filter_by(name='Default').first()
+    return render_template('shopping_list.html',
+                           stores=stores,
+                           default_store_id=default_store.id if default_store else None)
+
+
+@main_bp.route('/meal-plan')
+def meal_plan_page():
+    """Render the meal plan calendar page."""
+    return render_template('meal_plan.html')
+
+
+# ============================================================================
+# Store Routes
+# ============================================================================
+
+@main_bp.route('/stores', methods=['GET'])
+def get_stores():
+    """Get all stores with aisle counts."""
+    stores = Store.query.order_by(Store.name).all()
+    return jsonify([s.to_dict() for s in stores])
+
+
+@main_bp.route('/stores', methods=['POST'])
+@editor_or_admin_web
+def create_store():
+    """Create a new store, copying the Default store's aisle list."""
+    data = request.get_json()
+    if not data or not data.get('name', '').strip():
+        return jsonify({'error': 'Store name is required'}), 400
+
+    store = Store(name=data['name'].strip())
+    db.session.add(store)
+    db.session.flush()
+
+    # Copy aisles from Default store
+    default = Store.query.filter_by(name='Default').first()
+    if default:
+        for aisle in default.aisles:
+            sa = StoreAisle(
+                store_id=store.id,
+                name=aisle.name,
+                sort_order=aisle.sort_order
+            )
+            db.session.add(sa)
+    else:
+        # Fallback: create default aisles
+        for i, name in enumerate([
+            'Produce', 'Meat & Seafood', 'Deli', 'Dairy', 'Bakery',
+            'Grains & Pasta', 'Canned Goods', 'Spices', 'Condiments & Sauces',
+            'Frozen', 'Beverages', 'International', 'Health & Beauty',
+            'Household', 'Other'
+        ]):
+            sa = StoreAisle(store_id=store.id, name=name, sort_order=i)
+            db.session.add(sa)
+
+    db.session.commit()
+    return jsonify(store.to_dict(include_aisles=True)), 201
+
+
+@main_bp.route('/stores/<int:store_id>', methods=['PUT'])
+@editor_or_admin_web
+def update_store(store_id):
+    """Rename a store."""
+    store = db.get_or_404(Store, store_id)
+    data = request.get_json()
+    if not data or not data.get('name', '').strip():
+        return jsonify({'error': 'Store name is required'}), 400
+    store.name = data['name'].strip()
+    db.session.commit()
+    return jsonify(store.to_dict())
+
+
+@main_bp.route('/stores/<int:store_id>/aisles', methods=['PUT'])
+@editor_or_admin_web
+def update_store_aisles(store_id):
+    """Update aisles for a store — reorder or rename.
+
+    Expects JSON: { "aisles": [{"id": 1, "name": "Produce", "sort_order": 0}, ...] }
+    """
+    store = db.get_or_404(Store, store_id)
+    data = request.get_json()
+    if not data or 'aisles' not in data:
+        return jsonify({'error': 'aisles array is required'}), 400
+
+    existing_ids = {a.id for a in store.aisles}
+    submitted_ids = set()
+
+    for a_data in data['aisles']:
+        aid = a_data.get('id')
+        if aid:
+            submitted_ids.add(aid)
+            aisle = StoreAisle.query.filter_by(id=aid, store_id=store_id).first()
+            if aisle:
+                if 'name' in a_data and a_data['name'].strip():
+                    aisle.name = a_data['name'].strip()
+                if 'sort_order' in a_data:
+                    aisle.sort_order = int(a_data['sort_order'])
+
+    # Delete aisles not in the submitted list
+    to_delete = existing_ids - submitted_ids
+    if to_delete:
+        StoreAisle.query.filter(
+            StoreAisle.id.in_(to_delete),
+            StoreAisle.store_id == store_id
+        ).delete(synchronize_session='fetch')
+
+    db.session.commit()
+    return jsonify(store.to_dict(include_aisles=True))
+
+
+@main_bp.route('/aisles', methods=['GET'])
+def get_aisles():
+    """Get aisles for a store, ordered by sort_order.
+
+    Query: ?store_id=X
+    """
+    store_id = request.args.get('store_id', type=int)
+    if not store_id:
+        return jsonify({'error': 'store_id is required'}), 400
+    store = db.get_or_404(Store, store_id)
+    return jsonify([a.to_dict() for a in store.aisles])
+
+
+# ============================================================================
+# Aisle Override Routes
+# ============================================================================
+
+@main_bp.route('/stores/<int:store_id>/overrides', methods=['GET'])
+def get_store_overrides(store_id):
+    """Export all overrides for a store as JSON."""
+    store = db.get_or_404(Store, store_id)
+    overrides = AisleOverride.query.filter_by(store_id=store_id).all()
+    return jsonify([o.to_dict() for o in overrides])
+
+
+@main_bp.route('/stores/<int:store_id>/overrides', methods=['POST'])
+@editor_or_admin_web
+def import_store_overrides(store_id):
+    """Import overrides from JSON.
+
+    Expects: { "overrides": [{"item_name_normalized": "chicken", "aisle_name": "Meat & Seafood"}, ...] }
+
+    Creates or updates overrides.  If an aisle_name doesn't exist,
+    it is created at the end of the aisle list.
+    """
+    store = db.get_or_404(Store, store_id)
+    data = request.get_json()
+    if not data or 'overrides' not in data:
+        return jsonify({'error': 'overrides array is required'}), 400
+
+    created = 0
+    updated = 0
+    for ov_data in data['overrides']:
+        item_name = _normalize_item_name(ov_data.get('item_name_normalized', ''))
+        aisle_name = ov_data.get('aisle_name', '').strip()
+        if not item_name or not aisle_name:
+            continue
+
+        # Find or create the aisle
+        aisle = StoreAisle.query.filter_by(
+            store_id=store_id, name=aisle_name
+        ).first()
+        if not aisle:
+            max_order = db.session.query(
+                db.func.max(StoreAisle.sort_order)
+            ).filter_by(store_id=store_id).scalar() or -1
+            aisle = StoreAisle(
+                store_id=store_id, name=aisle_name,
+                sort_order=max_order + 1
+            )
+            db.session.add(aisle)
+            db.session.flush()
+
+        existing = AisleOverride.query.filter_by(
+            store_id=store_id, item_name_normalized=item_name
+        ).first()
+        if existing:
+            existing.aisle_id = aisle.id
+            updated += 1
+        else:
+            ov = AisleOverride(
+                store_id=store_id,
+                item_name_normalized=item_name,
+                aisle_id=aisle.id
+            )
+            db.session.add(ov)
+            created += 1
+
+    db.session.commit()
+    # Refresh store aisles after potential adds
+    store_aisles = StoreAisle.query.filter_by(store_id=store_id).order_by(
+        StoreAisle.sort_order
+    ).all()
+    return jsonify({
+        'created': created,
+        'updated': updated,
+        'aisles': [a.to_dict() for a in store_aisles]
+    }), 200
 
 
 # ============================================================================
@@ -117,25 +390,90 @@ def shopping_list():
 
 @main_bp.route('/shopping-items', methods=['GET'])
 def get_shopping_items_web():
-    """Get all shopping list items (web UI, no auth required for GET)."""
+    """Get all shopping list items grouped by store aisles.
+
+    Query: ?store_id=X — group by that store's aisle order.
+    Items without a matching aisle go to 'Other'.
+    """
+    store_id = request.args.get('store_id', type=int)
     items = ShoppingItem.query.options(
-        joinedload(ShoppingItem.recipe)
-    ).order_by(ShoppingItem.purchased.asc(), ShoppingItem.created_at.desc()).all()
-    return jsonify([item.to_dict() for item in items])
+        joinedload(ShoppingItem.recipe),
+        joinedload(ShoppingItem.aisle_override)
+    ).order_by(
+        ShoppingItem.purchased.asc(),
+        ShoppingItem.created_at.desc()
+    ).all()
+
+    if store_id:
+        store = db.get_or_404(Store, store_id)
+        aisles = {a.name: a for a in store.aisles}
+        # Build grouped structure
+        groups = {}
+        for aisle in store.aisles:
+            groups[aisle.name] = {'id': aisle.id, 'name': aisle.name, 'items': []}
+        groups['Other'] = {'id': None, 'name': 'Other', 'items': []}
+
+        for item in items:
+            # Determine what aisle this item belongs to
+            aisle_name = classify_aisle(item.name)
+            override_aisle_id = None
+
+            # Check for an explicit override
+            normalized = _normalize_item_name(item.name)
+            if normalized:
+                override = AisleOverride.query.filter_by(
+                    store_id=store_id, item_name_normalized=normalized
+                ).first()
+                if override and override.aisle_rel:
+                    aisle_name = override.aisle_rel.name
+                    override_aisle_id = override.id
+
+            # Find the aisle in our groups
+            if aisle_name in groups:
+                item_dict = item.to_dict()
+                item_dict['aisle_name'] = aisle_name
+                item_dict['override_aisle_id'] = override_aisle_id
+                groups[aisle_name]['items'].append(item_dict)
+            else:
+                item_dict = item.to_dict()
+                item_dict['aisle_name'] = 'Other'
+                item_dict['override_aisle_id'] = override_aisle_id
+                groups['Other']['items'].append(item_dict)
+
+        # Build ordered result
+        result_aisles = []
+        for aisle in store.aisles:
+            name = aisle.name
+            if name in groups and groups[name]['items']:
+                result_aisles.append(groups[name])
+        # Append Other only if it has items
+        if groups['Other']['items']:
+            result_aisles.append(groups['Other'])
+
+        return jsonify({
+            'aisles': result_aisles,
+            'store': store.to_dict()
+        })
+    else:
+        # No store — return flat list
+        return jsonify([item.to_dict() for item in items])
 
 
 @main_bp.route('/shopping-items', methods=['POST'])
 @limiter.limit("30 per minute")
 @editor_or_admin_web
 def add_shopping_items_web():
-    # TODO: merge with add_shopping_items() — both functions share identical logic
-    """Add items to the shopping list (web UI, session auth)."""
+    """Add items to the shopping list (web UI, session auth).
+
+    Accepts optional store_id param for auto-classification.
+    """
     data = request.get_json()
     if not data or 'items' not in data:
         return jsonify({'error': 'items array is required'}), 400
     if not isinstance(data['items'], list):
         return jsonify({'error': 'items must be an array'}), 400
 
+    store_id = data.get('store_id')
     added = []
     try:
         for item_data in data['items']:
@@ -151,10 +489,19 @@ def add_shopping_items_web():
             if existing:
                 continue
 
-            item = ShoppingItem(name=name, recipe_id=ri if ri else None)
+            # Auto-classify aisle
+            aisle_name, override_id = _resolve_aisle_for_item(name, store_id)
+
+            item = ShoppingItem(
+                name=name,
+                recipe_id=ri if ri else None,
+                aisle_override_id=override_id
+            )
             db.session.add(item)
             db.session.flush()
-            added.append(item.to_dict())
+            item_dict = item.to_dict()
+            item_dict['aisle_name'] = aisle_name
+            added.append(item_dict)
 
         db.session.commit()
         return jsonify({'items': added, 'count': len(added)}), 201
@@ -167,15 +514,57 @@ def add_shopping_items_web():
 @main_bp.route('/shopping-items/<int:item_id>', methods=['PUT'])
 @editor_or_admin_web
 def update_shopping_item_web(item_id):
-    """Update a shopping item (web UI, session auth)."""
+    """Update a shopping item (web UI, session auth).
+
+    If aisle_id is changed and differs from auto-classified,
+    creates/updates an AisleOverride.
+    """
     item = db.get_or_404(ShoppingItem, item_id)
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
+
     if 'purchased' in data:
         item.purchased = bool(data['purchased'])
     if 'name' in data and data['name'].strip():
         item.name = data['name'].strip()
+
+    # Handle aisle assignment
+    if 'aisle_id' in data and data.get('store_id'):
+        store_id = data['store_id']
+        new_aisle_id = data['aisle_id']
+
+        # Get the aisle name for the new assignment
+        new_aisle = StoreAisle.query.filter_by(
+            id=new_aisle_id, store_id=store_id
+        ).first()
+
+        if new_aisle:
+            # Check what auto-classification would give
+            auto_aisle_name = classify_aisle(item.name)
+            normalized = _normalize_item_name(item.name)
+            existing_override = AisleOverride.query.filter_by(
+                store_id=store_id, item_name_normalized=normalized
+            ).first()
+
+            if new_aisle.name != auto_aisle_name:
+                # Manual override: create or update
+                if existing_override:
+                    existing_override.aisle_id = new_aisle_id
+                elif normalized:
+                    ov = AisleOverride(
+                        store_id=store_id,
+                        item_name_normalized=normalized,
+                        aisle_id=new_aisle_id
+                    )
+                    db.session.add(ov)
+                    db.session.flush()
+                    item.aisle_override_id = ov.id
+            elif existing_override:
+                # Reverted to auto-classified — remove override
+                db.session.delete(existing_override)
+                item.aisle_override_id = None
+
     db.session.commit()
     return jsonify(item.to_dict())
 
@@ -203,6 +592,108 @@ def clear_purchased_items_web():
 def features():
     """Render the features page."""
     return render_template('features.html')
+
+
+# ============================================================================
+# Meal Plan Routes
+# ============================================================================
+
+@main_bp.route('/meal-plan/data', methods=['GET'])
+def get_meal_plan():
+    """Get a full week meal plan.
+
+    Query: ?week=2026-W20 — ISO week (defaults to current week).
+    """
+    week_str = request.args.get('week', _current_iso_week())
+    start_date, end_date = _iso_week_to_date_range(week_str)
+
+    # Query all meal plans for this date range
+    plans = MealPlan.query.options(
+        joinedload(MealPlan.recipe)
+    ).filter(
+        MealPlan.date >= start_date,
+        MealPlan.date <= end_date
+    ).order_by(MealPlan.date.asc(), MealPlan.meal_type.asc()).all()
+
+    # Build plan_by_date structure
+    plan_by_date = {}
+    d = start_date
+    while d <= end_date:
+        date_key = d.isoformat()
+        plan_by_date[date_key] = {}
+        d += timedelta(days=1)
+
+    for mp in plans:
+        date_key = mp.date.isoformat()
+        plan_by_date[date_key][mp.meal_type] = mp.to_dict()
+
+    return jsonify({
+        'plan_by_date': plan_by_date,
+        'start_date': start_date.isoformat(),
+        'end_date': end_date.isoformat(),
+        'current_week': _current_iso_week(),
+        'this_week': week_str,
+        'next_week': _next_iso_week(week_str),
+        'prev_week': _prev_iso_week(week_str),
+    })
+
+
+@main_bp.route('/meal-plan', methods=['POST'])
+@editor_or_admin_web
+def upsert_meal_plan():
+    """Create or update a meal plan entry.
+
+    Expects JSON: { date, meal_type, recipe_id(optional), notes(optional) }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    if 'date' not in data or 'meal_type' not in data:
+        return jsonify({'error': 'date and meal_type are required'}), 400
+
+    meal_type = data['meal_type']
+    if meal_type not in ('breakfast', 'lunch', 'dinner', 'snack'):
+        return jsonify({'error': 'Invalid meal_type'}), 400
+
+    try:
+        plan_date = date.fromisoformat(data['date'])
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid date format'}), 400
+
+    # Find existing or create new
+    mp = MealPlan.query.filter_by(
+        date=plan_date, meal_type=meal_type
+    ).first()
+
+    if mp is None:
+        mp = MealPlan(date=plan_date, meal_type=meal_type)
+        db.session.add(mp)
+
+    mp.recipe_id = data.get('recipe_id')
+    mp.notes = data.get('notes')
+    db.session.commit()
+
+    return jsonify(mp.to_dict()), 200 if mp else 201
+
+
+@main_bp.route('/meal-plan/<int:mp_id>', methods=['DELETE'])
+@editor_or_admin_web
+def delete_meal_plan(mp_id):
+    """Remove a meal plan entry."""
+    mp = db.get_or_404(MealPlan, mp_id)
+    db.session.delete(mp)
+    db.session.commit()
+    return '', 204
+
+
+@main_bp.route('/recipes/simple', methods=['GET'])
+def get_recipes_simple():
+    """Get simplified recipe list for dropdowns.
+
+    Returns: [{id, title}] — no ingredients/instructions.
+    """
+    recipes = Recipe.query.order_by(Recipe.title).all()
+    return jsonify([{'id': r.id, 'title': r.title} for r in recipes])
 
 
 # ============================================================================
@@ -888,6 +1379,7 @@ def add_shopping_items():
     if not isinstance(data['items'], list):
         return jsonify({'error': 'items must be an array'}), 400
 
+    store_id = data.get('store_id')
     added = []
     try:
         for item_data in data['items']:
@@ -903,10 +1395,17 @@ def add_shopping_items():
             if existing:
                 continue
 
-            item = ShoppingItem(name=name, recipe_id=ri if ri else None)
+            aisle_name, override_id = _resolve_aisle_for_item(name, store_id)
+            item = ShoppingItem(
+                name=name,
+                recipe_id=ri if ri else None,
+                aisle_override_id=override_id
+            )
             db.session.add(item)
             db.session.flush()
-            added.append(item.to_dict())
+            item_dict = item.to_dict()
+            item_dict['aisle_name'] = aisle_name
+            added.append(item_dict)
 
         db.session.commit()
         return jsonify({'items': added, 'count': len(added)}), 201
@@ -928,6 +1427,29 @@ def update_shopping_item(item_id):
         item.purchased = bool(data['purchased'])
     if 'name' in data and data['name'].strip():
         item.name = data['name'].strip()
+
+    if 'aisle_id' in data and data.get('store_id'):
+        store_id = data['store_id']
+        new_aisle_id = data['aisle_id']
+        new_aisle = StoreAisle.query.filter_by(id=new_aisle_id, store_id=store_id).first()
+        if new_aisle:
+            auto_aisle_name = classify_aisle(item.name)
+            normalized = _normalize_item_name(item.name)
+            existing_override = AisleOverride.query.filter_by(
+                store_id=store_id, item_name_normalized=normalized
+            ).first()
+            if new_aisle.name != auto_aisle_name:
+                if existing_override:
+                    existing_override.aisle_id = new_aisle_id
+                elif normalized:
+                    ov = AisleOverride(store_id=store_id, item_name_normalized=normalized, aisle_id=new_aisle_id)
+                    db.session.add(ov)
+                    db.session.flush()
+                    item.aisle_override_id = ov.id
+            elif existing_override:
+                db.session.delete(existing_override)
+                item.aisle_override_id = None
+
     db.session.commit()
     return jsonify(item.to_dict())
 
@@ -1107,4 +1629,3 @@ def add_recipe_tag(recipe_id):
         db.session.rollback()
         current_app.logger.error(f'Failed to add tag to recipe {recipe_id}: {e}')
         return jsonify({'error': 'Failed to add tag'}), 500
-

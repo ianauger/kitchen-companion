@@ -1,4 +1,8 @@
 import pytest
+import os
+
+os.environ['FLASK_TESTING'] = '1'  # Prevent seed_default_store from running during create_app
+
 from app import create_app, db
 from app.models import Recipe, Tag, Note
 from app.auth import User
