@@ -1,0 +1,667 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ recipe.title }} — Cooking Mode{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-950 text-white">
+    <!-- Cooking Header -->
+    <div class="sticky top-0 z-30 bg-gray-900/95 backdrop-blur border-b border-gray-800">
+        <div class="flex items-center justify-between px-4 py-3 max-w-5xl mx-auto">
+            <a href="{{ url_for('main.get_recipe_detail', recipe_id=recipe.id) }}" 
+               class="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors group">
+                <svg class="w-5 h-5 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+                <span class="text-sm font-medium hidden sm:inline">Exit Cooking Mode</span>
+            </a>
+            <h1 class="text-base md:text-lg font-bold truncate max-w-[60%]">{{ recipe.title }}</h1>
+            <div id="progress-text" class="text-sm font-medium text-primary-400">0%</div>
+        </div>
+        <!-- Progress Bar -->
+        <div class="h-1 bg-gray-800">
+            <div id="progress-bar" class="h-full bg-gradient-to-r from-primary-500 to-primary-400 transition-all duration-500 ease-out" style="width: 0%"></div>
+        </div>
+    </div>
+
+    <div class="max-w-5xl mx-auto p-4 md:p-8">
+        <!-- Quick Stats -->
+        <div class="grid grid-cols-3 md:grid-cols-5 gap-3 mb-8">
+            {% if recipe.difficulty %}
+            <div class="bg-gray-900 rounded-xl p-3 text-center border border-gray-800">
+                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Difficulty</div>
+                <div class="text-sm font-bold text-primary-400 capitalize">{{ recipe.difficulty }}</div>
+            </div>
+            {% endif %}
+            {% if recipe.prep_time %}
+            <div class="bg-gray-900 rounded-xl p-3 text-center border border-gray-800">
+                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Prep</div>
+                <div class="text-sm font-bold">{{ recipe.prep_time }} min</div>
+            </div>
+            {% endif %}
+            {% if recipe.cooking_time %}
+            <div class="bg-gray-900 rounded-xl p-3 text-center border border-gray-800">
+                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Cook</div>
+                <div class="text-sm font-bold">{{ recipe.cooking_time }} min</div>
+            </div>
+            {% endif %}
+            {% if recipe.total_time %}
+            <div class="bg-gray-900 rounded-xl p-3 text-center border border-gray-800">
+                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Total</div>
+                <div class="text-sm font-bold">{{ recipe.total_time }} min</div>
+            </div>
+            {% endif %}
+            {% if recipe.servings %}
+            <div class="bg-gray-900 rounded-xl p-3 text-center border border-gray-800">
+                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Serves</div>
+                <div class="text-sm font-bold">{{ recipe.servings }}</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
+            <!-- Ingredients Panel -->
+            <div>
+                <h2 class="text-xl font-bold mb-4 flex items-center">
+                    <span class="text-2xl mr-2">🥕</span> Ingredients
+                </h2>
+                <div id="ingredients-panel" class="bg-gray-900 rounded-2xl p-4 md:p-6 border border-gray-800">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Steps Panel -->
+            <div>
+                <h2 class="text-xl font-bold mb-4 flex items-center">
+                    <span class="text-2xl mr-2">📋</span> Steps
+                </h2>
+                <div id="steps-panel" class="space-y-3">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Active Timers Bar -->
+<div id="timers-bar" class="fixed bottom-4 right-4 z-50 space-y-2 max-w-sm"></div>
+
+<script>
+(function() {
+    const recipeId = {{ recipe.id }};
+    const STORAGE_KEY = `kc-cook-${recipeId}`;
+
+    // =========================================================================
+    // State
+    // =========================================================================
+    const state = {
+        stepsTotal: 0,
+        stepsChecked: 0,
+        activeTimers: {}  // timerId -> { id, seconds, remaining, interval, label, stepIndex }
+    };
+
+    // Load saved state
+    function loadState() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+            if (saved && saved.steps && saved.ingredients) {
+                return saved;
+            }
+        } catch(e) {}
+        return { steps: {}, ingredients: {} };
+    }
+
+    function saveState() {
+        const data = {
+            steps: {},
+            ingredients: {}
+        };
+        document.querySelectorAll('.step-checkbox').forEach(cb => { data.steps[cb.dataset.index] = cb.checked; });
+        document.querySelectorAll('.ing-checkbox').forEach(cb => { data.ingredients[cb.dataset.index] = cb.checked; });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    function clearState() {
+        localStorage.removeItem(STORAGE_KEY);
+    }
+
+    // =========================================================================
+    // Progress
+    // =========================================================================
+    function updateProgress() {
+        const checkboxes = document.querySelectorAll('.step-checkbox');
+        state.stepsTotal = checkboxes.length;
+        state.stepsChecked = document.querySelectorAll('.step-checkbox:checked').length;
+        const pct = state.stepsTotal > 0 ? Math.round((state.stepsChecked / state.stepsTotal) * 100) : 0;
+        document.getElementById('progress-bar').style.width = `${pct}%`;
+        document.getElementById('progress-text').textContent = `${pct}%`;
+        saveState();
+    }
+
+    // =========================================================================
+    // Ingredient Parsing
+    // =========================================================================
+    function parseIngredients(rawText) {
+        if (!rawText || !rawText.trim()) return [];
+
+        const lines = rawText.split('\n');
+        const groups = [];
+        let currentGroup = { label: null, items: [] };
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) {
+                // Empty line: flush current group if it has items
+                if (currentGroup.items.length > 0) {
+                    groups.push({ ...currentGroup });
+                    currentGroup = { label: null, items: [] };
+                }
+                continue;
+            }
+
+            // Check if it's a section header (no bullet, not empty, doesn't look like an ingredient)
+            const cleaned = trimmed.replace(/^[•\-\*\s]+/, '').trim();
+            if (!trimmed.startsWith('•') && !trimmed.startsWith('-') && !trimmed.startsWith('*')) {
+                // Heuristic: an ingredient line typically contains a quantity (digit or fraction)
+                // or measurement unit. Headers don't.
+                const looksLikeIngredient = /\b(\d|[¼½¾⅓⅔⅛⅜⅝⅞]|cup|tbsp|tsp|oz|lb|pound|ounce|gram|kg|ml|liter|gallon|quart|pint|pinch|dash|can|bunch|clove|slice|piece|whole|pack|bag|box)\b/i.test(trimmed);
+                
+                if (!looksLikeIngredient) {
+                    // Might be a header like "Optional Scallion Oil:"
+                    if (trimmed.endsWith(':') || trimmed.length < 60 && /^[A-Z]/.test(trimmed)) {
+                        // Flush previous group
+                        if (currentGroup.items.length > 0 || currentGroup.label) {
+                            groups.push({ ...currentGroup });
+                        }
+                        currentGroup = { label: cleaned, items: [] };
+                        continue;
+                    }
+                }
+            }
+
+            // It's a bullet item
+            currentGroup.items.push(cleaned);
+        }
+
+        // Flush last group
+        if (currentGroup.items.length > 0 || currentGroup.label) {
+            groups.push({ ...currentGroup });
+        }
+
+        // If no groups found, put everything as one group
+        if (groups.length === 0 && lines.some(l => l.trim())) {
+            groups.push({ label: null, items: lines.filter(l => l.trim()).map(l => l.replace(/^[•\-\*\s]+/, '').trim()) });
+        }
+
+        return groups;
+    }
+
+    function renderIngredients(groups, savedState) {
+        const panel = document.getElementById('ingredients-panel');
+        if (groups.length === 0) {
+            panel.innerHTML = '<p class="text-gray-500 text-center py-8">No ingredients listed</p>';
+            return;
+        }
+
+        let html = '';
+        let globalIndex = 0;
+
+        for (const group of groups) {
+            if (group.label) {
+                html += `<div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-2 first:mt-0">${escapeHtml(group.label)}</div>`;
+            }
+            for (const item of group.items) {
+                const checked = savedState.ingredients[globalIndex] ? 'checked' : '';
+                html += `
+                <label class="flex items-start gap-3 py-2 cursor-pointer group ing-item" data-index="${globalIndex}">
+                    <input type="checkbox" class="ing-checkbox w-5 h-5 mt-0.5 rounded border-gray-600 bg-gray-800 text-primary-500 focus:ring-primary-500 cursor-pointer flex-shrink-0" data-index="${globalIndex}" ${checked}>
+                    <span class="text-base text-gray-300 group-has-[:checked]:line-through group-has-[:checked]:text-gray-600 transition-all duration-200 select-none">${escapeHtml(item)}</span>
+                </label>`;
+                globalIndex++;
+            }
+        }
+
+        panel.innerHTML = html;
+
+        // Wire up ingredient checkbox events
+        panel.querySelectorAll('.ing-checkbox').forEach(cb => {
+            cb.addEventListener('change', saveState);
+        });
+    }
+
+    // =========================================================================
+    // Step Parsing
+    // =========================================================================
+    function parseSteps(rawText) {
+        if (!rawText || !rawText.trim()) return [];
+
+        const lines = rawText.split('\n');
+        const steps = [];
+        let currentStep = null;
+        
+        // Patterns for step detection
+        const stepPatterns = [
+            /^(\d+)[\.\)]\s+(.+)/,         // "1. Do something" or "1) Do something"
+            /^Step\s+(\d+)[\s:]+(.+)/i,    // "Step 1: Do something"
+        ];
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            let isNewStep = false;
+            let stepText = '';
+            let stepNum = null;
+
+            for (const pattern of stepPatterns) {
+                const match = trimmed.match(pattern);
+                if (match) {
+                    isNewStep = true;
+                    stepNum = parseInt(match[1]);
+                    stepText = match[2].trim();
+                    break;
+                }
+            }
+
+            if (isNewStep) {
+                if (currentStep) steps.push(currentStep);
+                currentStep = { text: stepText, number: stepNum };
+            } else if (currentStep) {
+                // Continuation line — append to previous step
+                currentStep.text += ' ' + trimmed;
+            } else {
+                // Text before any numbered step — treat as first step
+                currentStep = { text: trimmed, number: 1 };
+            }
+        }
+
+        if (currentStep) steps.push(currentStep);
+        return steps;
+    }
+
+    // =========================================================================
+    // Timer Detection
+    // =========================================================================
+    function detectTimers(stepText) {
+        const timers = [];
+        
+        // Skip temperature patterns
+        const textWithoutTemp = stepText.replace(/\d{2,4}\s*[°℉℃]?\s*[Ff]\b/g, '')
+                                       .replace(/\d{2,4}\s*degrees?\b/gi, '')
+                                       .replace(/at\s+\d{3,4}\b/g, '')
+                                       .replace(/preheat.*?\d{3,4}/gi, '')
+                                       .replace(/internal temp.*?\d{3,4}/gi, '');
+
+        // Pattern 1: "30 minutes", "30 mins", "30 min" with optional range "30 to 45 minutes"
+        let match;
+        const minPattern = /(\d+)\s*(?:to\s*(\d+))?\s*(minutes?|mins?|min)\b/gi;
+        while ((match = minPattern.exec(textWithoutTemp)) !== null) {
+            const mins = parseInt(match[2] || match[1]);
+            if (mins > 0 && mins <= 1440) {  // sanity check: max 24 hours
+                timers.push({ minutes: mins, label: `${mins} min`, raw: match[0] });
+            }
+        }
+
+        // Pattern 2: "1 hour", "1.5 hours", "2 hours"
+        const hourPattern = /(\d+(?:\.\d+)?)\s*hours?\b/gi;
+        while ((match = hourPattern.exec(textWithoutTemp)) !== null) {
+            const mins = Math.round(parseFloat(match[1]) * 60);
+            if (mins > 0 && mins <= 1440) {
+                timers.push({ minutes: mins, label: mins >= 60 ? `${match[1]} hr` : `${mins} min`, raw: match[0] });
+            }
+        }
+
+        // Pattern 3: "1 hour 30 min" or "1h 30m" or "1 hr 30 min"
+        const compoundPattern = /(\d+)\s*h(?:ou)?r?s?\s*(\d+)\s*(?:minutes?|mins?|min)?\b/gi;
+        while ((match = compoundPattern.exec(textWithoutTemp)) !== null) {
+            const mins = parseInt(match[1]) * 60 + parseInt(match[2]);
+            if (mins > 0 && mins <= 1440) {
+                timers.push({ minutes: mins, label: `${match[1]}h ${match[2]}m`, raw: match[0] });
+            }
+        }
+
+        // Deduplicate by raw text
+        const seen = new Set();
+        return timers.filter(t => {
+            const key = `${t.minutes}-${t.raw}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
+
+    function renderSteps(steps, savedState) {
+        const panel = document.getElementById('steps-panel');
+        if (steps.length === 0) {
+            panel.innerHTML = '<p class="text-gray-500 text-center py-8 bg-gray-900 rounded-2xl border border-gray-800">No instructions listed</p>';
+            return;
+        }
+
+        let html = '';
+        steps.forEach((step, idx) => {
+            const checked = savedState.steps[idx] ? 'checked' : '';
+            const timers = detectTimers(step.text);
+
+            let timerHtml = '';
+            if (timers.length > 0) {
+                timerHtml = '<div class="flex flex-wrap gap-1.5 mt-2">';
+                timers.forEach((t, ti) => {
+                    timerHtml += `
+                    <button type="button" 
+                        class="timer-btn inline-flex items-center space-x-1 px-2.5 py-1 text-xs font-medium bg-primary-600/30 hover:bg-primary-600/50 text-primary-200 rounded-full transition-colors border border-primary-500/30"
+                        data-minutes="${t.minutes}"
+                        data-label="${escapeHtmlAttr(t.label)}"
+                        data-step="${idx}"
+                        data-timer-id="${idx}-${ti}">
+                        <span>⏱️</span>
+                        <span>${escapeHtml(t.label)}</span>
+                    </button>`;
+                });
+                timerHtml += '</div>';
+            }
+
+            html += `
+            <div class="bg-gray-900 rounded-2xl border border-gray-800 p-4 md:p-6 step-card" data-step="${idx}">
+                <div class="flex items-start gap-3 md:gap-4">
+                    <input type="checkbox" 
+                        class="step-checkbox w-5 h-5 md:w-6 md:h-6 mt-0.5 rounded border-gray-600 bg-gray-800 text-primary-500 focus:ring-primary-500 cursor-pointer flex-shrink-0" 
+                        data-index="${idx}"
+                        ${checked}>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="text-xs font-bold text-primary-400 bg-primary-400/10 px-2 py-0.5 rounded-full">${step.number || idx + 1}</span>
+                        </div>
+                        <p class="text-base text-gray-200 leading-relaxed">${escapeHtml(step.text)}</p>
+                        ${timerHtml}
+                    </div>
+                </div>
+            </div>`;
+        });
+
+        panel.innerHTML = html;
+
+        // Wire up step checkboxes
+        panel.querySelectorAll('.step-checkbox').forEach(cb => {
+            cb.addEventListener('change', function() {
+                const card = this.closest('.step-card');
+                if (this.checked) {
+                    card.style.borderLeftColor = 'var(--tw-ring-color)';
+                    card.classList.add('border-l-2', 'border-l-primary-500');
+                } else {
+                    card.classList.remove('border-l-2', 'border-l-primary-500');
+                    card.style.borderLeftColor = '';
+                }
+                updateProgress();
+            });
+
+            // Initialize checked state visual
+            if (cb.checked) {
+                const card = cb.closest('.step-card');
+                card.classList.add('border-l-2', 'border-l-primary-500');
+            }
+        });
+
+        // Wire up timer buttons
+        panel.querySelectorAll('.timer-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                startTimer({
+                    id: this.dataset.timerId,
+                    minutes: parseInt(this.dataset.minutes),
+                    label: this.dataset.label,
+                    stepIndex: parseInt(this.dataset.step)
+                });
+            });
+        });
+    }
+
+    // =========================================================================
+    // Timer Engine
+    // =========================================================================
+    function startTimer(timerDef) {
+        const timerId = timerDef.id;
+        const totalSeconds = timerDef.minutes * 60;
+
+        // Don't start duplicate timers
+        if (state.activeTimers[timerId]) return;
+
+        const timer = {
+            id: timerId,
+            label: timerDef.label,
+            stepIndex: timerDef.stepIndex,
+            totalSeconds: totalSeconds,
+            remaining: totalSeconds,
+            startedAt: Date.now(),
+            interval: null
+        };
+
+        // Disable the button
+        const btn = document.querySelector(`[data-timer-id="${timerId}"]`);
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+
+        // Create timer UI
+        renderTimerBar(timer);
+
+        // Start countdown using wall-clock to avoid drift when tab is backgrounded
+        timer.interval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - timer.startedAt) / 1000);
+            timer.remaining = Math.max(0, totalSeconds - elapsed);
+            updateTimerBar(timer);
+
+            if (timer.remaining <= 0) {
+                completeTimer(timer);
+            }
+        }, 1000);
+
+        state.activeTimers[timerId] = timer;
+
+        // Request notification permission if not granted
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    }
+
+    function renderTimerBar(timer) {
+        const bar = document.getElementById('timers-bar');
+        const el = document.createElement('div');
+        el.id = `timer-${timer.id}`;
+        el.className = 'bg-gray-900 border border-gray-700 rounded-xl p-3 shadow-2xl animate-in';
+        el.innerHTML = `
+            <div class="flex items-center justify-between gap-4 min-w-[200px]">
+                <div>
+                    <div class="text-xs text-gray-500">Step ${timer.stepIndex + 1} — ${escapeHtml(timer.label)}</div>
+                    <div class="text-2xl font-mono font-bold text-amber-400 timer-display">${formatTime(timer.remaining)}</div>
+                </div>
+                <button class="timer-dismiss text-gray-500 hover:text-red-400 transition-colors p-1" data-timer-id="${timer.id}">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>`;
+        
+        el.querySelector('.timer-dismiss').addEventListener('click', () => dismissTimer(timer.id));
+        bar.appendChild(el);
+    }
+
+    function updateTimerBar(timer) {
+        const el = document.getElementById(`timer-${timer.id}`);
+        if (!el) return;
+        const display = el.querySelector('.timer-display');
+        if (display) {
+            display.textContent = formatTime(timer.remaining);
+            // Flash when under 60 seconds
+            if (timer.remaining <= 60) {
+                display.classList.add('text-red-400', 'animate-pulse');
+                display.classList.remove('text-amber-400');
+            }
+        }
+    }
+
+    function completeTimer(timer) {
+        clearInterval(timer.interval);
+        const el = document.getElementById(`timer-${timer.id}`);
+        if (el) {
+            el.classList.add('border-green-500/50');
+            const display = el.querySelector('.timer-display');
+            if (display) {
+                display.textContent = 'Done! ✅';
+                display.className = 'text-lg font-bold text-green-400';
+            }
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => el.remove(), 5000);
+        }
+
+        // Play sound
+        playTimerSound();
+
+        // Browser notification
+        if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Kitchen Companion ⏱️', {
+                body: `Timer done: ${timer.label} (Step ${timer.stepIndex + 1})`,
+                icon: '/static/icons/icon-192.png'
+            });
+        }
+
+        delete state.activeTimers[timer.id];
+    }
+
+    function dismissTimer(timerId) {
+        const timer = state.activeTimers[timerId];
+        if (timer) {
+            clearInterval(timer.interval);
+        }
+        const el = document.getElementById(`timer-${timerId}`);
+        if (el) el.remove();
+        delete state.activeTimers[timerId];
+
+        // Re-enable the button
+        const btn = document.querySelector(`[data-timer-id="${timerId}"]`);
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+    }
+
+    function formatTime(seconds) {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+
+    function playTimerSound() {
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            
+            const ctx = new AudioCtx();
+            // Three beeps
+            [0, 0.2, 0.4].forEach((delay, i) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, ctx.currentTime + delay);
+                gain.gain.setValueAtTime(0.3, ctx.currentTime + delay);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + 0.15);
+                osc.start(ctx.currentTime + delay);
+                osc.stop(ctx.currentTime + delay + 0.15);
+            });
+            // Close the context after all beeps finish to free resources
+            setTimeout(() => ctx.close(), 1000);
+        } catch(e) {
+            // Web Audio not available, silently skip
+        }
+    }
+
+    // =========================================================================
+    // Helpers
+    // =========================================================================
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    function escapeHtmlAttr(str) {
+        return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // =========================================================================
+    // Clean up on exit
+    // =========================================================================
+    function cleanupAllTimers() {
+        Object.keys(state.activeTimers).forEach(id => dismissTimer(id));
+    }
+
+    // Handle navigation away (back link, browser back, refresh, tab close)
+    window.addEventListener('beforeunload', cleanupAllTimers);
+    window.addEventListener('pagehide', cleanupAllTimers);
+
+    // Also handle the explicit back link for immediate UI feedback
+    // Use the specific URL path to target the exact back link
+    const backUrl = '{{ url_for("main.get_recipe_detail", recipe_id=recipe.id) }}';
+    const exitLink = document.querySelector('a[href="' + backUrl + '"]');
+    if (exitLink) {
+        exitLink.addEventListener('click', function() {
+            cleanupAllTimers();
+            // Note: we keep localStorage state so if they come back, progress is saved
+        });
+    }
+
+    // =========================================================================
+    // Init
+    // =========================================================================
+    const savedState = loadState();
+
+    // Parse and render ingredients
+    const rawIngredients = {{ recipe.ingredients|tojson }};
+    const ingredientGroups = parseIngredients(rawIngredients);
+    renderIngredients(ingredientGroups, savedState);
+
+    // Parse and render steps
+    const rawInstructions = {{ recipe.instructions|tojson }};
+    const steps = parseSteps(rawInstructions);
+    renderSteps(steps, savedState);
+
+    // Initialize progress
+    updateProgress();
+})();
+</script>
+
+<style>
+    /* Custom animation for timers appearing */
+    @keyframes animate-in {
+        from { opacity: 0; transform: translateY(10px) scale(0.95); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .animate-in {
+        animation: animate-in 0.2s ease-out;
+    }
+
+    /* Larger checkbox touch targets on mobile */
+    @media (max-width: 768px) {
+        .step-checkbox, .ing-checkbox {
+            min-width: 1.5rem;
+            min-height: 1.5rem;
+        }
+    }
+
+    /* iOS-style checkbox */
+    .step-checkbox:checked {
+        background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
+        background-color: currentColor;
+        background-size: 100% 100%;
+        background-position: center;
+        background-repeat: no-repeat;
+    }
+    .ing-checkbox:checked {
+        background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
+        background-color: currentColor;
+        background-size: 100% 100%;
+        background-position: center;
+        background-repeat: no-repeat;
+    }
+</style>
+{% endblock %}

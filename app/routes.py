@@ -75,6 +75,16 @@ def get_recipe_detail(recipe_id):
     return render_template('recipe_detail.html', recipe=recipe)
 
 
+@main_bp.route('/recipe/<int:recipe_id>/cook')
+def get_execution_view(recipe_id):
+    """Render the cooking execution view (step-by-step mode)."""
+    recipe = Recipe.query.options(
+        joinedload(Recipe.tags),
+        joinedload(Recipe.notes)
+    ).get_or_404(recipe_id)
+    return render_template('execution.html', recipe=recipe)
+
+
 @main_bp.route('/search')
 def search():
     """Render the search page with all tags for filtering."""

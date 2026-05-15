@@ -3,6 +3,15 @@
 {% block title %}{{ recipe.title }} - Kitchen Companion{% endblock %}
 
 {% block content %}
+<style>
+    @keyframes bounce-gentle {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-4px); }
+    }
+    .animate-bounce-gentle {
+        animation: bounce-gentle 2s ease-in-out infinite;
+    }
+</style>
 <div class="p-4 md:p-8 max-w-5xl mx-auto">
     <!-- Back Button -->
     <a href="/" class="inline-flex items-center space-x-2 text-gray-500 hover:text-primary-600 transition-colors mb-6 group">
@@ -30,6 +39,13 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
                 </svg>
                 <span>Edit Recipe</span>
+            </a>
+            
+            <!-- Start Cooking Button -->
+            <a href="{{ url_for('main.get_execution_view', recipe_id=recipe.id) }}" 
+               class="absolute bottom-4 right-4 px-5 py-3 bg-gradient-to-r from-primary-600 to-primary-500 text-white font-bold rounded-2xl hover:from-primary-500 hover:to-primary-400 transition-all shadow-xl flex items-center space-x-2 z-10 animate-bounce-gentle group">
+                <span class="text-xl">🍳</span>
+                <span class="group-hover:scale-105 transition-transform">Start Cooking</span>
             </a>
             
             <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4 md:p-8 text-white">
@@ -79,7 +95,17 @@
                         </div>
                         <div class="flex items-center justify-between">
                             <span class="text-gray-600">Servings</span>
-                            <span class="font-bold text-gray-900">{{ recipe.servings or 'N/A' }}</span>
+                            <div class="flex items-center gap-1">
+                                <button id="scale-down-btn" 
+                                    class="w-7 h-7 flex items-center justify-center text-xs font-bold bg-primary-100 text-primary-700 rounded-lg hover:bg-primary-200 transition-colors"
+                                    title="Scale down (0.5x)">½×</button>
+                                <span id="servings-value" class="font-bold text-gray-900 cursor-pointer hover:text-primary-600 transition-colors" 
+                                    title="Click to reset scaling"
+                                    data-original="{{ recipe.servings or 0 }}">{{ recipe.servings or 'N/A' }}</span>
+                                <button id="scale-up-btn"
+                                    class="w-7 h-7 flex items-center justify-center text-xs font-bold bg-primary-100 text-primary-700 rounded-lg hover:bg-primary-200 transition-colors"
+                                    title="Scale up (2x)">2×</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -94,7 +120,7 @@
                             Add to List
                         </button>
                     </div>
-                    <div id="ingredients-container" class="text-gray-600 whitespace-pre-line leading-relaxed">
+                    <div id="ingredients-container" class="text-gray-600 whitespace-pre-line leading-relaxed" data-original="{{ recipe.ingredients|e }}">
                         {{ recipe.ingredients }}
                     </div>
                 </div>
@@ -495,6 +521,219 @@
             updateAddButton();
         }
     });
+
+    // ========== Recipe Scaling ==========
+    let currentScale = 1;
+    let originalIngredients = '';
+    let originalServings = 0;
+
+    function gcd(a, b) {
+        a = Math.abs(Math.round(a));
+        b = Math.abs(Math.round(b));
+        while (b) { [a, b] = [b, a % b]; }
+        return a || 1;
+    }
+
+    function toFraction(decimal, tolerance = 0.001) {
+        if (Math.abs(decimal - Math.round(decimal)) < tolerance) {
+            return String(Math.round(decimal));
+        }
+        let bestNum = 1, bestDen = 1, bestErr = Math.abs(decimal - 1);
+        for (let den = 1; den <= 16; den++) {
+            let num = Math.round(decimal * den);
+            let err = Math.abs(decimal - num / den);
+            if (err < bestErr) {
+                bestErr = err;
+                bestNum = num;
+                bestDen = den;
+            }
+        }
+        let g = gcd(bestNum, bestDen);
+        bestNum /= g;
+        bestDen /= g;
+        if (bestDen === 1) return String(bestNum);
+        if (bestNum > bestDen) {
+            let whole = Math.floor(bestNum / bestDen);
+            let rem = bestNum % bestDen;
+            return rem === 0 ? String(whole) : `${whole} ${rem}/${bestDen}`;
+        }
+        return `${bestNum}/${bestDen}`;
+    }
+
+    // Parse a mixed number prefix like "1 1/2" or "2/3" or "1.5"
+    function parseMixedNumber(str) {
+        str = str.trim();
+        // Try mixed fraction: "1 1/2"
+        let mixedMatch = str.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+        if (mixedMatch) {
+            return parseInt(mixedMatch[1]) + parseInt(mixedMatch[2]) / parseInt(mixedMatch[3]);
+        }
+        // Try simple fraction: "1/2"
+        let fracMatch = str.match(/^(\d+)\/(\d+)$/);
+        if (fracMatch) {
+            return parseInt(fracMatch[1]) / parseInt(fracMatch[2]);
+        }
+        // Try decimal: "1.5" or integer: "200"
+        let decMatch = str.match(/^(\d+\.?\d*)$/);
+        if (decMatch) {
+            return parseFloat(decMatch[1]);
+        }
+        return null;
+    }
+
+    function formatScaled(value) {
+        if (Number.isInteger(value)) return String(value);
+        if (value < 1) return toFraction(value);
+        // For values like 1.5, show as "1 1/2"
+        let whole = Math.floor(value);
+        let frac = value - whole;
+        if (frac < 0.01) return String(whole);
+        return `${whole} ${toFraction(frac)}`;
+    }
+
+    function scaleIngredients(factor) {
+        const container = document.getElementById('ingredients-container');
+        if (!container) return;
+        const lines = originalIngredients.split('\n');
+        const scaledLines = lines.map(line => {
+            let trimmed = line.trim();
+            if (!trimmed) return line;
+
+            // Try to match a number prefix with optional unit
+            // Patterns: "200g chicken", "1/2 tsp salt", "1 1/2 cups flour", "2-3 cloves", "1.5 cups"
+            
+            // Range: "2-3 cloves" or "1-2"
+            let rangeMatch = trimmed.match(/^(\d+\.?\d*(?:\s+\d+\/\d+|\/\d+)?)\s*-\s*(\d+\.?\d*(?:\s+\d+\/\d+|\/\d+)?)(\s+.+)$/);
+            if (rangeMatch) {
+                let val1 = parseMixedNumber(rangeMatch[1]);
+                let val2 = parseMixedNumber(rangeMatch[2]);
+                let rest = rangeMatch[3];
+                if (val1 !== null && val2 !== null) {
+                    let s1 = val1 * factor;
+                    let s2 = val2 * factor;
+                    return `${formatScaled(s1)}-${formatScaled(s2)}${rest}`;
+                }
+            }
+
+            // Number with fraction: "1 1/2 cups flour"
+            let mixedMatch = trimmed.match(/^(\d+\s+\d+\/\d+)(\s+.+)$/);
+            if (mixedMatch) {
+                let val = parseMixedNumber(mixedMatch[1]);
+                let rest = mixedMatch[2];
+                if (val !== null) {
+                    return formatScaled(val * factor) + rest;
+                }
+            }
+
+            // Simple fraction: "1/2 tsp salt"
+            let fracMatch = trimmed.match(/^(\d+\/\d+)(\s+.+)$/);
+            if (fracMatch) {
+                let val = parseMixedNumber(fracMatch[1]);
+                let rest = fracMatch[2];
+                if (val !== null) {
+                    return formatScaled(val * factor) + rest;
+                }
+            }
+
+            // Decimal or integer with unit: "200g chicken", "1.5 cups flour", "4 eggs"
+            let numMatch = trimmed.match(/^(\d+\.?\d*)(\s*.+)$/);
+            if (numMatch) {
+                let val = parseFloat(numMatch[1]);
+                let rest = numMatch[2];
+                if (!isNaN(val) && rest.trim()) {
+                    return formatScaled(val * factor) + rest;
+                }
+            }
+
+            return line;
+        });
+        container.textContent = scaledLines.join('\n');
+    }
+
+    function updateServingsDisplay() {
+        const el = document.getElementById('servings-value');
+        if (!el || originalServings === 0) return;
+        let scaled = originalServings * currentScale;
+        if (currentScale === 1) {
+            el.textContent = originalServings;
+        } else {
+            el.textContent = Math.round(scaled);
+        }
+    }
+
+    function applyScale(factor) {
+        currentScale *= factor;
+        scaleIngredients(currentScale);
+        updateServingsDisplay();
+        // Rebuild checkboxes to reflect scaled quantities
+        rebuildIngredientCheckboxes();
+    }
+
+    function resetScale() {
+        currentScale = 1;
+        const container = document.getElementById('ingredients-container');
+        if (container) {
+            container.textContent = originalIngredients;
+        }
+        updateServingsDisplay();
+        rebuildIngredientCheckboxes();
+    }
+
+    function rebuildIngredientCheckboxes() {
+        const container = document.getElementById('ingredients-container');
+        if (!container) return;
+        const text = container.textContent.trim();
+        const lines = text.split('\n').filter(line => line.trim());
+        if (lines.length === 0) return;
+        const addBtn = document.getElementById('add-to-list-btn');
+        if (!addBtn) return;
+
+        container.textContent = '';
+        lines.forEach((line, i) => {
+            const div = document.createElement('div');
+            div.className = 'flex items-start gap-3 py-1.5';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'ingredient-checkbox w-4 h-4 md:w-5 md:h-5 mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer flex-shrink-0';
+            checkbox.id = `ing-check-${i}`;
+            checkbox.addEventListener('change', updateAddButton);
+            const label = document.createElement('label');
+            label.htmlFor = `ing-check-${i}`;
+            label.className = 'text-base text-gray-700 cursor-pointer select-none flex-1';
+            label.textContent = line.trim();
+            div.appendChild(checkbox);
+            div.appendChild(label);
+            container.appendChild(div);
+        });
+        updateAddButton();
+    }
+
+    function initScaling() {
+        const ingredientsContainer = document.getElementById('ingredients-container');
+        if (ingredientsContainer) {
+            // Store original from data attribute to preserve exact formatting
+            const origData = ingredientsContainer.getAttribute('data-original');
+            if (origData !== null) {
+                // Decode HTML entities back to actual characters
+                const txt = document.createElement('textarea');
+                txt.innerHTML = origData;
+                originalIngredients = txt.value;
+            } else {
+                originalIngredients = ingredientsContainer.textContent;
+            }
+        }
+        const servingsEl = document.getElementById('servings-value');
+        if (servingsEl) {
+            originalServings = parseInt(servingsEl.getAttribute('data-original')) || 0;
+        }
+
+        document.getElementById('scale-down-btn')?.addEventListener('click', () => applyScale(0.5));
+        document.getElementById('scale-up-btn')?.addEventListener('click', () => applyScale(2));
+        document.getElementById('servings-value')?.addEventListener('click', resetScale);
+    }
+
+    // Initialize scaling on load
+    document.addEventListener('DOMContentLoaded', initScaling);
 
     // Initialize ingredient checkboxes on load
     document.addEventListener('DOMContentLoaded', initIngredientCheckboxes);
