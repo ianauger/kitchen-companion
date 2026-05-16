@@ -123,14 +123,13 @@ class TestPantryAPI:
     """Tests for the Pantry API endpoints."""
 
     @pytest.fixture
-    def pantry_admin_headers(self, app, client):
+    def pantry_admin_headers(self, app, client, db_session):
         """Create admin user and return JWT auth headers for write operations."""
         from app.auth import User
-        with app.app_context():
-            admin = User(username='pantryadmin', role='admin')
-            admin.set_password('TestPass123')
-            db.session.add(admin)
-            db.session.commit()
+        admin = User(username='pantryadmin', role='admin')
+        admin.set_password('TestPass123')
+        db_session.add(admin)
+        db_session.commit()
         resp = client.post('/api/auth/login', json={
             'username': 'pantryadmin',
             'password': 'TestPass123',
