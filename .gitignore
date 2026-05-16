@@ -76,3 +76,4 @@ linux-venv/
 .api-key
 .jwt-token
 .user-api-key
+.worktrees
