@@ -5,6 +5,7 @@ from app import db, limiter
 from app.models import (Recipe, Tag, Note, ShoppingItem,
                          Store, StoreAisle, AisleOverride, MealPlan,
                          PrepSession, PrepSessionRecipe, PrepTask,
+                         PantryItem,
                          classify_aisle, seed_default_store)
 from app.auth import editor_or_admin, admin_required, login_required_web, editor_or_admin_web
 from app.image_utils import download_image, delete_image, validate_url, get_upload_dir
@@ -14,6 +15,7 @@ from config import (
     DEFAULT_PER_PAGE, MAX_PER_PAGE
 )
 from sqlalchemy.orm import joinedload, selectinload
+import re
 import os
 import random
 from datetime import datetime, timezone, date, timedelta
@@ -119,6 +121,50 @@ def _prev_iso_week(iso_week_str):
     prv = start - timedelta(weeks=1)
     iso = prv.isocalendar()
     return f'{iso[0]}-W{iso[1]:02d}'
+
+
+# Pantry helpers
+def _parse_ingredient_name(ingredient_line):
+    """Extract a clean item name from an ingredient line.
+
+    Strips leading quantity/unit prefixes like '1 lb', '2 cups', '1 tbsp'.
+    Returns the normalized name or None if line is empty.
+    """
+    cleaned = re.sub(r'^[\d\s./]+\s*(lb|lbs|pound|pounds|oz|ounce|ounces|'
+                     r'cup|cups|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons|'
+                     r'g|gram|grams|kg|kilogram|kilograms|ml|milliliter|milliliters|'
+                     r'l|liter|liters|clove|cloves|pinch|dash|can|cans|jar|jars|'
+                     r'box|boxes|bottle|bottles|bag|bags|piece|pieces|slice|slices|'
+                     r'head|heads|bunch|bunches|stalk|stalks|sprig|sprigs|'
+                     r'package|packages|container|containers|packet|packets'
+                     r')?\s+', '', ingredient_line, flags=re.IGNORECASE)
+    cleaned = cleaned.strip().strip('.,;')
+    return cleaned if cleaned else None
+
+
+def _upsert_pantry_item_from_ingredient(name):
+    """Find existing pantry item or create a new one for an ingredient name.
+
+    Uses case-insensitive lookup. If found, increments quantity by 1.
+    If not found, creates with quantity=1 and category='Other'.
+    """
+    normalized_name = name.strip().lower()
+
+    existing = PantryItem.query.filter(
+        db.func.lower(PantryItem.name) == normalized_name
+    ).first()
+
+    if existing:
+        existing.quantity += 1.0
+        return existing
+
+    item = PantryItem(
+        name=name.strip(),
+        quantity=1.0,
+        category='Other',
+    )
+    db.session.add(item)
+    return item
 
 
 # ============================================================================
@@ -1892,3 +1938,195 @@ def add_recipe_tag(recipe_id):
         db.session.rollback()
         current_app.logger.error(f'Failed to add tag to recipe {recipe_id}: {e}')
         return jsonify({'error': 'Failed to add tag'}), 500
+
+
+# ============================================================================
+# Pantry API Routes
+# ============================================================================
+
+@api_bp.route('/pantry/items', methods=['GET'])
+def list_pantry_items():
+    """List all pantry items, optionally filtered by category.
+
+    Query: ?category=X
+    """
+    category = request.args.get('category')
+    query = PantryItem.query
+
+    if category:
+        query = query.filter(PantryItem.category == category)
+
+    items = query.order_by(PantryItem.name.asc()).all()
+    return jsonify([item.to_dict() for item in items])
+
+
+@api_bp.route('/pantry/items', methods=['POST'])
+@editor_or_admin
+def create_pantry_item():
+    """Create a new pantry item.
+
+    Expects JSON: { name (required), quantity, unit, category, min_quantity,
+                    purchased_date, expiry_date, notes }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'error': 'Name is required'}), 400
+
+    # Check for existing item (case-insensitive)
+    existing = PantryItem.query.filter(
+        db.func.lower(PantryItem.name) == db.func.lower(name)
+    ).first()
+    if existing:
+        return jsonify({'error': f'Item "{name}" already exists'}), 409
+
+    try:
+        item = PantryItem(
+            name=name,
+            quantity=float(data.get('quantity', 0)),
+            unit=data.get('unit'),
+            category=data.get('category', 'Other'),
+            min_quantity=float(data.get('min_quantity', 0)),
+            notes=data.get('notes'),
+        )
+
+        # Parse dates if provided
+        if 'purchased_date' in data and data['purchased_date']:
+            try:
+                item.purchased_date = datetime.fromisoformat(data['purchased_date'])
+            except (ValueError, TypeError):
+                pass
+        if 'expiry_date' in data and data['expiry_date']:
+            try:
+                item.expiry_date = datetime.fromisoformat(data['expiry_date'])
+            except (ValueError, TypeError):
+                pass
+
+        db.session.add(item)
+        db.session.commit()
+        return jsonify(item.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Failed to create pantry item: {e}')
+        return jsonify({'error': 'Failed to create item'}), 500
+
+
+@api_bp.route('/pantry/items/<int:item_id>', methods=['PUT'])
+@editor_or_admin
+def update_pantry_item(item_id):
+    """Update a pantry item.
+
+    Expects JSON with any updatable fields.
+    """
+    item = db.get_or_404(PantryItem, item_id)
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    if 'name' in data and data['name'].strip():
+        new_name = data['name'].strip()
+        # Check for conflict with other items
+        existing = PantryItem.query.filter(
+            db.func.lower(PantryItem.name) == db.func.lower(new_name),
+            PantryItem.id != item_id
+        ).first()
+        if existing:
+            return jsonify({'error': f'Item "{new_name}" already exists'}), 409
+        item.name = new_name
+
+    if 'quantity' in data:
+        item.quantity = float(data['quantity'])
+    if 'unit' in data:
+        item.unit = data['unit'] or None
+    if 'category' in data:
+        item.category = data['category']
+    if 'min_quantity' in data:
+        item.min_quantity = float(data['min_quantity'])
+    if 'notes' in data:
+        item.notes = data['notes'] or None
+    if 'purchased_date' in data:
+        try:
+            item.purchased_date = datetime.fromisoformat(data['purchased_date']) if data['purchased_date'] else None
+        except (ValueError, TypeError):
+            pass
+    if 'expiry_date' in data:
+        try:
+            item.expiry_date = datetime.fromisoformat(data['expiry_date']) if data['expiry_date'] else None
+        except (ValueError, TypeError):
+            pass
+
+    db.session.commit()
+    return jsonify(item.to_dict())
+
+
+@api_bp.route('/pantry/items/<int:item_id>', methods=['DELETE'])
+@admin_required
+def delete_pantry_item(item_id):
+    """Delete a pantry item."""
+    item = db.get_or_404(PantryItem, item_id)
+    db.session.delete(item)
+    db.session.commit()
+    return '', 204
+
+
+@api_bp.route('/pantry/items/<int:item_id>/deduct', methods=['POST'])
+@editor_or_admin
+def deduct_pantry_item(item_id):
+    """Deduct a quantity from a pantry item (clamped to 0)."""
+    item = db.get_or_404(PantryItem, item_id)
+    data = request.get_json()
+    if not data or 'quantity' not in data:
+        return jsonify({'error': 'quantity is required'}), 400
+
+    deduct_qty = float(data['quantity'])
+    item.quantity = max(0, item.quantity - deduct_qty)
+    db.session.commit()
+    return jsonify(item.to_dict())
+
+
+@api_bp.route('/pantry/low-stock', methods=['GET'])
+def get_low_stock_items():
+    """Return items where quantity <= min_quantity (and min_quantity > 0)."""
+    items = PantryItem.query.filter(
+        PantryItem.min_quantity > 0,
+        PantryItem.quantity <= PantryItem.min_quantity
+    ).order_by(PantryItem.name.asc()).all()
+    return jsonify([item.to_dict() for item in items])
+
+
+@api_bp.route('/pantry/ingredients-to-pantry', methods=['POST'])
+@editor_or_admin
+def import_ingredients_to_pantry():
+    """Bulk import recipe ingredients as pantry items.
+
+    Expects JSON: { recipe_id: N }
+    Parses the recipe's ingredients text (one per line, optional quantity prefix)
+    and creates/updates PantryItems.
+    """
+    data = request.get_json()
+    if not data or 'recipe_id' not in data:
+        return jsonify({'error': 'recipe_id is required'}), 400
+
+    recipe = db.get_or_404(Recipe, data['recipe_id'])
+    if not recipe.ingredients:
+        return jsonify({'items': [], 'count': 0})
+
+    added = []
+    for line in recipe.ingredients.strip().split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+
+        name = _parse_ingredient_name(line)
+        if not name:
+            continue
+
+        item = _upsert_pantry_item_from_ingredient(name)
+        if item:
+            added.append(item.to_dict())
+
+    db.session.commit()
+    return jsonify({'items': added, 'count': len(added)}), 201 if added else 200
