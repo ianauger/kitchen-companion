@@ -399,6 +399,72 @@ class PrepTask(db.Model):
         return f'<PrepTask {self.description[:40]}...>'
 
 
+# ── Pantry Inventory Models ─────────────────────────────────────────────
+
+class PantryItem(db.Model):
+    """An item in the user's pantry inventory.
+
+    Attributes:
+        id: Unique identifier
+        name: Item name (unique)
+        quantity: How much you have (default 0)
+        unit: Unit of measurement (cups, lbs, pieces, etc.)
+        category: Mirrors aisle categorization (Produce, Meat, etc.)
+        min_quantity: Low-stock threshold (default 0 = no alert)
+        purchased_date: Last time you bought it
+        expiry_date: When it expires
+        notes: Optional notes
+        created_at, updated_at: Timestamps
+    """
+    __tablename__ = 'pantry_items'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    quantity = db.Column(db.Float, default=0)
+    unit = db.Column(db.String(50), nullable=True)
+    category = db.Column(db.String(50), default='Other', index=True)
+    min_quantity = db.Column(db.Float, default=0)
+    purchased_date = db.Column(db.DateTime, nullable=True)
+    expiry_date = db.Column(db.DateTime, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+    @property
+    def is_low_stock(self):
+        """True if quantity is non-zero and at or below min_quantity."""
+        return self.min_quantity > 0 and self.quantity <= self.min_quantity
+
+    @property
+    def days_until_expiry(self):
+        """Return days until expiry (negative if past), or None."""
+        if self.expiry_date is None:
+            return None
+        delta = self.expiry_date - datetime.now(timezone.utc)
+        return delta.days
+
+    def to_dict(self):
+        """Convert to dictionary representation."""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'quantity': self.quantity,
+            'unit': self.unit,
+            'category': self.category,
+            'min_quantity': self.min_quantity,
+            'is_low_stock': self.is_low_stock,
+            'days_until_expiry': self.days_until_expiry,
+            'purchased_date': self.purchased_date.isoformat() if self.purchased_date else None,
+            'expiry_date': self.expiry_date.isoformat() if self.expiry_date else None,
+            'notes': self.notes,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self):
+        return f'<PantryItem {self.name}>'
+
+
 # ── Aisle classification keyword mappings ──────────────────────────────
 
 # Keyword → aisle name.  Checked in order; first match wins.
