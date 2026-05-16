@@ -432,7 +432,7 @@ class PantryItem(db.Model):
 
     @property
     def is_low_stock(self):
-        """True if quantity is non-zero and at or below min_quantity."""
+        """True when quantity is at or below the low-stock threshold (min_quantity > 0)."""
         return self.min_quantity > 0 and self.quantity <= self.min_quantity
 
     @property
