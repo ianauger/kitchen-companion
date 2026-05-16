@@ -1998,12 +1998,12 @@ def create_pantry_item():
             try:
                 item.purchased_date = datetime.fromisoformat(data['purchased_date'])
             except (ValueError, TypeError):
-                pass
+                return jsonify({'error': 'Invalid purchased_date format. Use ISO 8601 (e.g. 2026-05-16T12:00:00)'}), 400
         if 'expiry_date' in data and data['expiry_date']:
             try:
                 item.expiry_date = datetime.fromisoformat(data['expiry_date'])
             except (ValueError, TypeError):
-                pass
+                return jsonify({'error': 'Invalid expiry_date format. Use ISO 8601 (e.g. 2026-06-16T12:00:00)'}), 400
 
         db.session.add(item)
         db.session.commit()
@@ -2051,12 +2051,12 @@ def update_pantry_item(item_id):
         try:
             item.purchased_date = datetime.fromisoformat(data['purchased_date']) if data['purchased_date'] else None
         except (ValueError, TypeError):
-            pass
+            return jsonify({'error': 'Invalid purchased_date format. Use ISO 8601 (e.g. 2026-05-16T12:00:00)'}), 400
     if 'expiry_date' in data:
         try:
             item.expiry_date = datetime.fromisoformat(data['expiry_date']) if data['expiry_date'] else None
         except (ValueError, TypeError):
-            pass
+            return jsonify({'error': 'Invalid expiry_date format. Use ISO 8601 (e.g. 2026-06-16T12:00:00)'}), 400
 
     db.session.commit()
     return jsonify(item.to_dict())
