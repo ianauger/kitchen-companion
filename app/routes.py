@@ -902,6 +902,12 @@ def features():
     return render_template('features.html')
 
 
+@main_bp.route('/pantry')
+def pantry_page():
+    """Render the pantry inventory page."""
+    return render_template('pantry.html')
+
+
 # ============================================================================
 # Meal Plan Routes
 # ============================================================================

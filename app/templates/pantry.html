@@ -1,0 +1,609 @@
+{% extends "layout.html" %}
+
+{% block title %}Pantry - Kitchen Companion{% endblock %}
+
+{% block extra_css %}
+<style>
+    .category-section {
+        border-left-width: 4px;
+        border-left-style: solid;
+    }
+    .cat-color-0 { border-left-color: #3b82f6; }
+    .cat-color-1 { border-left-color: #10b981; }
+    .cat-color-2 { border-left-color: #f59e0b; }
+    .cat-color-3 { border-left-color: #8b5cf6; }
+    .cat-color-4 { border-left-color: #ef4444; }
+    .cat-color-5 { border-left-color: #06b6d4; }
+    .cat-color-6 { border-left-color: #f97316; }
+    .cat-color-7 { border-left-color: #ec4899; }
+    .cat-color-8 { border-left-color: #14b8a6; }
+    .cat-color-9 { border-left-color: #6366f1; }
+    .cat-color-10 { border-left-color: #84cc16; }
+    .cat-color-11 { border-left-color: #a855f7; }
+    .cat-color-12 { border-left-color: #78716c; }
+    .cat-color-13 { border-left-color: #d946ef; }
+    .cat-color-14 { border-left-color: #64748b; }
+
+    .expiry-badge {
+        font-size: 0.7rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 9999px;
+        font-weight: 600;
+    }
+    .expiry-ok { background-color: #d1fae5; color: #065f46; }
+    .expiry-soon { background-color: #fef3c7; color: #92400e; }
+    .expiry-expired { background-color: #fee2e2; color: #991b1b; }
+
+    .low-stock-badge {
+        background-color: #fee2e2;
+        color: #dc2626;
+        font-weight: 700;
+        font-size: 0.65rem;
+        padding: 0.15rem 0.4rem;
+        border-radius: 0.25rem;
+    }
+
+    .pantry-modal-overlay {
+        background: rgba(0, 0, 0, 0.4);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="p-4 md:p-8 max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-4">
+        <h1 class="text-2xl md:text-3xl font-bold text-gray-900 flex items-center">
+            <span class="text-3xl mr-3">🧺</span>Pantry Inventory
+        </h1>
+        <div class="flex gap-2">
+            <button id="import-recipe-btn"
+                class="px-4 py-2 text-sm font-medium text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-colors">
+                📥 Import from Recipe
+            </button>
+            <button id="add-item-btn"
+                class="px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+                + Add Item
+            </button>
+        </div>
+    </div>
+
+    <!-- Import from Recipe Panel (hidden) -->
+    <div id="import-panel" class="hidden mb-4 bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+        <h3 class="text-sm font-semibold text-gray-700 mb-3">Import Ingredients from Recipe</h3>
+        <div class="flex gap-2">
+            <select id="recipe-select"
+                class="flex-1 px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 text-base">
+                <option value="">-- Select a recipe --</option>
+            </select>
+            <button id="import-btn"
+                class="px-6 py-2 bg-primary-600 text-white font-medium rounded-xl hover:bg-primary-700 transition-colors">
+                Import
+            </button>
+        </div>
+        <div id="import-result" class="hidden mt-3 text-sm text-green-600"></div>
+    </div>
+
+    <!-- Low-Stock Alerts Section -->
+    <div id="low-stock-section" class="hidden mb-4 bg-red-50 border border-red-200 rounded-2xl p-4">
+        <h3 class="text-sm font-bold text-red-800 mb-2">⚠️ Low Stock Alerts</h3>
+        <div id="low-stock-list" class="space-y-2"></div>
+    </div>
+
+    <!-- Filter / Category Tabs -->
+    <div class="mb-4 flex flex-wrap gap-2">
+        <button class="category-filter px-3 py-1.5 text-sm rounded-xl font-medium bg-primary-600 text-white" data-category="">
+            All
+        </button>
+        <button class="category-filter px-3 py-1.5 text-sm rounded-xl font-medium bg-gray-100 text-gray-600 hover:bg-gray-200" data-category="Produce">
+            🥬 Produce
+        </button>
+        <button class="category-filter px-3 py-1.5 text-sm rounded-xl font-medium bg-gray-100 text-gray-600 hover:bg-gray-200" data-category="Meat">
+            🥩 Meat
+        </button>
+        <button class="category-filter px-3 py-1.5 text-sm rounded-xl font-medium bg-gray-100 text-gray-600 hover:bg-gray-200" data-category="Dairy">
+            🥛 Dairy
+        </button>
+        <button class="category-filter px-3 py-1.5 text-sm rounded-xl font-medium bg-gray-100 text-gray-600 hover:bg-gray-200" data-category="Pantry">
+            🥫 Pantry
+        </button>
+        <button class="category-filter px-3 py-1.5 text-sm rounded-xl font-medium bg-gray-100 text-gray-600 hover:bg-gray-200" data-category="Spices">
+            🌿 Spices
+        </button>
+        <button class="category-filter px-3 py-1.5 text-sm rounded-xl font-medium bg-gray-100 text-gray-600 hover:bg-gray-200" data-category="Other">
+            📦 Other
+        </button>
+    </div>
+
+    <!-- Items Grid (grouped by category) -->
+    <div id="pantry-items" class="space-y-4">
+        <!-- Populated dynamically -->
+    </div>
+
+    <!-- Empty State -->
+    <div id="empty-state" class="hidden text-center py-16">
+        <div class="text-6xl mb-4">🧺</div>
+        <h2 class="text-xl font-semibold text-gray-700 mb-2">Your pantry is empty</h2>
+        <p class="text-gray-400">Add items manually or import ingredients from a recipe</p>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div id="item-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/40 pantry-modal-overlay" onclick="closeItemModal()"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 id="modal-title" class="text-lg font-bold text-gray-900">Add Pantry Item</h3>
+                <button onclick="closeItemModal()" class="p-2 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <form id="item-form" class="space-y-4">
+                <input type="hidden" id="edit-item-id">
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                    <input type="text" id="item-name"
+                        class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        required maxlength="255">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                        <input type="number" id="item-quantity" step="0.1" min="0"
+                            class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            value="0">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                        <input type="text" id="item-unit"
+                            class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            placeholder="cups, lbs, pieces..." maxlength="50">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                    <select id="item-category"
+                        class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        <option value="Produce">🥬 Produce</option>
+                        <option value="Meat">🥩 Meat</option>
+                        <option value="Dairy">🥛 Dairy</option>
+                        <option value="Pantry">🥫 Pantry</option>
+                        <option value="Spices">🌿 Spices</option>
+                        <option value="Frozen">❄️ Frozen</option>
+                        <option value="Beverages">☕ Beverages</option>
+                        <option value="Other">📦 Other</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Low Stock Threshold</label>
+                    <input type="number" id="item-min-qty" step="0.1" min="0"
+                        class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        value="0" placeholder="0 = no alert">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Purchase Date</label>
+                        <input type="date" id="item-purchased-date"
+                            class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
+                        <input type="date" id="item-expiry-date"
+                            class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                    <textarea id="item-notes"
+                        class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+                        rows="2" maxlength="2000"></textarea>
+                </div>
+
+                <div class="flex gap-3 pt-2">
+                    <button type="submit"
+                        class="flex-1 px-4 py-3 bg-primary-600 text-white font-semibold rounded-xl hover:bg-primary-700 transition-colors">
+                        Save
+                    </button>
+                    <button type="button" onclick="closeItemModal()"
+                        class="px-4 py-3 text-gray-500 font-medium rounded-xl hover:bg-gray-100 transition-colors">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    let state = {
+        items: [],
+        currentCategory: '',
+        recipes: []
+    };
+
+    const CATEGORY_EMOJIS = {
+        'Produce': '🥬', 'Meat': '🥩', 'Dairy': '🥛',
+        'Pantry': '🥫', 'Spices': '🌿', 'Frozen': '❄️',
+        'Beverages': '☕', 'Other': '📦'
+    };
+
+    function getColorClass(category, idx) {
+        const catIndex = ['Produce', 'Meat', 'Dairy', 'Pantry', 'Spices', 'Frozen', 'Beverages', 'Other'].indexOf(category);
+        return `cat-color-${catIndex >= 0 ? catIndex : 14}`;
+    }
+
+    // ── Data loading ──────────────────────────────────────────────────
+
+    async function loadItems(category) {
+        let url = '/api/pantry/items';
+        if (category) url += `?category=${encodeURIComponent(category)}`;
+        try {
+            const resp = await fetch(url);
+            state.items = await resp.json();
+            renderItems();
+        } catch (e) {
+            console.error('Failed to load pantry items:', e);
+        }
+    }
+
+    async function loadRecipes() {
+        try {
+            const resp = await fetch('/recipes/simple');
+            state.recipes = await resp.json();
+            const select = document.getElementById('recipe-select');
+            select.innerHTML = '<option value="">-- Select a recipe --</option>' +
+                state.recipes.map(r => `<option value="${r.id}">${escapeHtml(r.title)}</option>`).join('');
+        } catch (e) {
+            console.error('Failed to load recipes:', e);
+        }
+    }
+
+    async function loadLowStock() {
+        try {
+            const resp = await fetch('/api/pantry/low-stock');
+            const items = await resp.json();
+            const section = document.getElementById('low-stock-section');
+            const list = document.getElementById('low-stock-list');
+
+            if (items.length === 0) {
+                section.classList.add('hidden');
+                return;
+            }
+
+            section.classList.remove('hidden');
+            list.innerHTML = items.map(item => `
+                <div class="flex items-center justify-between bg-white rounded-xl px-3 py-2 border border-red-100">
+                    <div>
+                        <span class="font-medium text-gray-900">${escapeHtml(item.name)}</span>
+                        <span class="text-sm text-gray-500 ml-2">${item.quantity} ${item.unit || ''} (min: ${item.min_quantity})</span>
+                    </div>
+                    <button onclick="addToShoppingList('${escapeHtml(item.name).replace(/'/g, "\\'")}')"
+                        class="px-3 py-1 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
+                        + Shopping List
+                    </button>
+                </div>
+            `).join('');
+        } catch (e) {
+            console.error('Failed to load low stock:', e);
+        }
+    }
+
+    // ── Rendering ─────────────────────────────────────────────────────
+
+    function renderItems() {
+        const container = document.getElementById('pantry-items');
+        const emptyState = document.getElementById('empty-state');
+
+        if (state.items.length === 0) {
+            container.innerHTML = '';
+            emptyState.classList.remove('hidden');
+            return;
+        }
+
+        emptyState.classList.add('hidden');
+
+        const categories = ['Produce', 'Meat', 'Dairy', 'Pantry', 'Spices', 'Frozen', 'Beverages', 'Other'];
+        const grouped = {};
+        state.items.forEach(item => {
+            const cat = item.category || 'Other';
+            if (!grouped[cat]) grouped[cat] = [];
+            grouped[cat].push(item);
+        });
+
+        container.innerHTML = categories.map(cat => {
+            if (!grouped[cat] || grouped[cat].length === 0) return '';
+            const colorClass = getColorClass(cat);
+            const itemsHtml = grouped[cat].map(item => renderItemCard(item)).join('');
+            const emoji = CATEGORY_EMOJIS[cat] || '📦';
+            return `
+                <div class="category-section ${colorClass} bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div class="px-4 py-3 bg-gray-50 border-b border-gray-100 font-semibold text-gray-700 text-sm flex items-center justify-between">
+                        <span>${emoji} ${cat} <span class="text-gray-400 font-normal">(${grouped[cat].length})</span></span>
+                    </div>
+                    <div class="divide-y divide-gray-100">
+                        ${itemsHtml}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderItemCard(item) {
+        const lowStock = item.is_low_stock ? '<span class="low-stock-badge ml-2">LOW</span>' : '';
+        const unit = item.unit ? ` ${escapeHtml(item.unit)}` : '';
+
+        let expiryBadge = '';
+        if (item.days_until_expiry !== null) {
+            if (item.days_until_expiry < 0) {
+                expiryBadge = `<span class="expiry-badge expiry-expired">Expired</span>`;
+            } else if (item.days_until_expiry <= 7) {
+                expiryBadge = `<span class="expiry-badge expiry-soon">${item.days_until_expiry}d</span>`;
+            } else {
+                expiryBadge = `<span class="expiry-badge expiry-ok">${item.days_until_expiry}d</span>`;
+            }
+        }
+
+        const notes = item.notes ? `<p class="text-xs text-gray-400 mt-1">${escapeHtml(item.notes)}</p>` : '';
+
+        return `
+            <div class="px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center">
+                        <span class="font-medium text-gray-900">${escapeHtml(item.name)}</span>
+                        ${lowStock}
+                        ${expiryBadge}
+                    </div>
+                    <div class="text-sm text-gray-500">
+                        <span class="font-semibold">${item.quantity}</span>${unit}
+                    </div>
+                    ${notes}
+                </div>
+                <div class="flex gap-1 ml-2">
+                    <button onclick="openEditModal(${item.id})"
+                        class="px-2 py-1 text-xs text-gray-400 hover:text-primary-600 rounded-lg hover:bg-primary-50"
+                        title="Edit">✏️</button>
+                    <button onclick="deductItem(${item.id})"
+                        class="px-2 py-1 text-xs text-gray-400 hover:text-orange-600 rounded-lg hover:bg-orange-50"
+                        title="Deduct">➖</button>
+                    <button onclick="deleteItem(${item.id})"
+                        class="px-2 py-1 text-xs text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50"
+                        title="Delete">🗑️</button>
+                </div>
+            </div>
+        `;
+    }
+
+    // ── Add to Shopping List ─────────────────────────────────────────
+
+    async function addToShoppingList(name) {
+        try {
+            const resp = await fetch('/shopping-items', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items: [{ name }] })
+            });
+            if (resp.ok) {
+                alert(`"${name}" added to shopping list`);
+            } else {
+                const data = await resp.json();
+                if (data.error) alert(data.error);
+            }
+        } catch (e) {
+            console.error('Failed to add to shopping list:', e);
+        }
+    }
+
+    // ── Modal operations ──────────────────────────────────────────────
+
+    function openAddModal() {
+        document.getElementById('modal-title').textContent = 'Add Pantry Item';
+        document.getElementById('edit-item-id').value = '';
+        document.getElementById('item-form').reset();
+        document.getElementById('item-quantity').value = '0';
+        document.getElementById('item-min-qty').value = '0';
+        document.getElementById('item-category').value = 'Produce';
+        document.getElementById('item-modal').classList.remove('hidden');
+    }
+
+    async function openEditModal(itemId) {
+        const item = state.items.find(i => i.id === itemId);
+        if (!item) return;
+
+        document.getElementById('modal-title').textContent = 'Edit Pantry Item';
+        document.getElementById('edit-item-id').value = item.id;
+        document.getElementById('item-name').value = item.name;
+        document.getElementById('item-quantity').value = item.quantity;
+        document.getElementById('item-unit').value = item.unit || '';
+        document.getElementById('item-category').value = item.category || 'Other';
+        document.getElementById('item-min-qty').value = item.min_quantity;
+        document.getElementById('item-notes').value = item.notes || '';
+
+        if (item.purchased_date) {
+            document.getElementById('item-purchased-date').value = item.purchased_date.slice(0, 10);
+        } else {
+            document.getElementById('item-purchased-date').value = '';
+        }
+        if (item.expiry_date) {
+            document.getElementById('item-expiry-date').value = item.expiry_date.slice(0, 10);
+        } else {
+            document.getElementById('item-expiry-date').value = '';
+        }
+
+        document.getElementById('item-modal').classList.remove('hidden');
+    }
+
+    function closeItemModal() {
+        document.getElementById('item-modal').classList.add('hidden');
+    }
+
+    // ── CRUD actions ──────────────────────────────────────────────────
+
+    document.getElementById('item-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const editId = document.getElementById('edit-item-id').value;
+        const name = document.getElementById('item-name').value.trim();
+        if (!name) return;
+
+        const body = {
+            name,
+            quantity: parseFloat(document.getElementById('item-quantity').value) || 0,
+            unit: document.getElementById('item-unit').value.trim() || null,
+            category: document.getElementById('item-category').value,
+            min_quantity: parseFloat(document.getElementById('item-min-qty').value) || 0,
+            notes: document.getElementById('item-notes').value.trim() || null,
+        };
+
+        const purchasedDate = document.getElementById('item-purchased-date').value;
+        const expiryDate = document.getElementById('item-expiry-date').value;
+        if (purchasedDate) body.purchased_date = purchasedDate + 'T00:00:00';
+        if (expiryDate) body.expiry_date = expiryDate + 'T00:00:00';
+
+        try {
+            let resp;
+            if (editId) {
+                resp = await fetch(`/api/pantry/items/${editId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+            } else {
+                resp = await fetch('/api/pantry/items', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+            }
+
+            if (!resp.ok) {
+                const data = await resp.json();
+                alert(data.error || 'Failed to save item');
+                return;
+            }
+
+            closeItemModal();
+            await loadItems(state.currentCategory);
+            await loadLowStock();
+        } catch (e) {
+            console.error('Failed to save item:', e);
+            alert('Failed to save item');
+        }
+    });
+
+    async function deductItem(itemId) {
+        const qty = prompt('How much to deduct?', '1');
+        if (qty === null) return;
+        const num = parseFloat(qty);
+        if (isNaN(num) || num <= 0) return;
+
+        try {
+            const resp = await fetch(`/api/pantry/items/${itemId}/deduct`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quantity: num }),
+            });
+            if (resp.ok) {
+                await loadItems(state.currentCategory);
+                await loadLowStock();
+            }
+        } catch (e) {
+            console.error('Failed to deduct:', e);
+        }
+    }
+
+    async function deleteItem(itemId) {
+        if (!confirm('Remove this item from pantry?')) return;
+        try {
+            const resp = await fetch(`/api/pantry/items/${itemId}`, { method: 'DELETE' });
+            if (resp.ok || resp.status === 204) {
+                await loadItems(state.currentCategory);
+                await loadLowStock();
+            }
+        } catch (e) {
+            console.error('Failed to delete:', e);
+        }
+    }
+
+    // ── Category filter ───────────────────────────────────────────────
+
+    document.querySelectorAll('.category-filter').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.category-filter').forEach(b => {
+                b.classList.remove('bg-primary-600', 'text-white');
+                b.classList.add('bg-gray-100', 'text-gray-600');
+            });
+            this.classList.remove('bg-gray-100', 'text-gray-600');
+            this.classList.add('bg-primary-600', 'text-white');
+
+            state.currentCategory = this.dataset.category;
+            loadItems(state.currentCategory);
+        });
+    });
+
+    // ── Import from Recipe ────────────────────────────────────────────
+
+    document.getElementById('import-recipe-btn').addEventListener('click', () => {
+        const panel = document.getElementById('import-panel');
+        panel.classList.toggle('hidden');
+        if (!panel.classList.contains('hidden')) {
+            loadRecipes();
+        }
+    });
+
+    document.getElementById('import-btn').addEventListener('click', async () => {
+        const recipeId = document.getElementById('recipe-select').value;
+        if (!recipeId) return;
+
+        try {
+            const resp = await fetch('/api/pantry/ingredients-to-pantry', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ recipe_id: parseInt(recipeId) }),
+            });
+            const data = await resp.json();
+            const result = document.getElementById('import-result');
+            result.classList.remove('hidden');
+            result.textContent = `✓ Imported ${data.count} item${data.count !== 1 ? 's' : ''}`;
+            await loadItems(state.currentCategory);
+            await loadLowStock();
+        } catch (e) {
+            console.error('Failed to import:', e);
+            alert('Failed to import ingredients');
+        }
+    });
+
+    // ── Keyboard shortcuts ────────────────────────────────────────────
+
+    document.addEventListener('keydown', (e) => {
+        const modal = document.getElementById('item-modal');
+        if (modal.classList.contains('hidden')) return;
+        if (e.key === 'Escape') closeItemModal();
+    });
+
+    // ── Init ──────────────────────────────────────────────────────────
+
+    document.getElementById('add-item-btn').addEventListener('click', openAddModal);
+
+    async function init() {
+        await loadItems('');
+        await loadLowStock();
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+</script>
+{% endblock %}

@@ -112,6 +112,13 @@
                         <span>Shopping List</span>
                     </a>
                     
+                    <a href="/pantry" class="flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 {% if request.path == '/pantry' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path>
+                        </svg>
+                        <span>🧺 Pantry</span>
+                    </a>
+                    
                     <a href="{{ url_for('main.create_recipe_form') }}" class="flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 {% if request.path == '/recipes/new' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>

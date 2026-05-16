@@ -329,3 +329,24 @@ class TestPantryAPI:
         """POST /api/pantry/ingredients-to-pantry without recipe_id returns 400."""
         resp = client.post('/api/pantry/ingredients-to-pantry', json={}, headers=pantry_admin_headers)
         assert resp.status_code == 400
+
+
+class TestPantryWeb:
+    """Tests for the pantry web UI."""
+
+    def test_pantry_page_loads(self, client):
+        """GET /pantry returns 200."""
+        resp = client.get('/pantry')
+        assert resp.status_code == 200
+
+    def test_pantry_page_content(self, client, db_session):
+        """GET /pantry shows the pantry page with title."""
+        from app.models import PantryItem
+        item = PantryItem(name="Chicken", quantity=2.0, unit="lbs", category="Meat")
+        db_session.add(item)
+        db_session.commit()
+
+        resp = client.get('/pantry')
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert 'Pantry Inventory' in html
