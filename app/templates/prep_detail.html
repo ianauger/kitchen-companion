@@ -1,0 +1,308 @@
+{% extends "layout.html" %}
+{% block title %}{{ session.name or 'Prep Session' }} — Kitchen Companion{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-6 md:py-8">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <a href="/prep" class="text-sm text-primary-600 hover:text-primary-800 mb-1 inline-block">← Back to sessions</a>
+            <h1 class="text-2xl md:text-3xl font-bold text-gray-900" id="session-title-display">
+                {{ session.name or 'Unnamed Session' }}
+            </h1>
+            <p class="text-sm text-gray-500 mt-1">
+                {{ session.recipe_count }} recipe{{ 's' if session.recipe_count != 1 }} ·
+                Created {{ session.created_at.strftime('%Y-%m-%d') if session.created_at }}
+            </p>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="editSessionName()"
+                    class="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm">
+                ✏️ Edit
+            </button>
+            <button onclick="deleteSession()"
+                    class="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm">
+                🗑️ Delete
+            </button>
+        </div>
+    </div>
+
+    <!-- Recipe List -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
+        <h2 class="text-lg font-semibold mb-3">📋 Recipes</h2>
+        <div class="flex flex-wrap gap-2" id="recipe-list">
+            {% for psr in session.recipes %}
+            <a href="/recipe/{{ psr.recipe_id }}" target="_blank"
+               class="inline-flex items-center gap-2 px-3 py-2 bg-gray-50 hover:bg-primary-50 rounded-lg border border-gray-200 hover:border-primary-300 transition-all text-sm">
+                <span class="font-medium">{{ psr.recipe.title if psr.recipe else 'Unknown' }}</span>
+                {% if psr.servings_multiplier != 1.0 %}
+                <span class="text-xs text-gray-400">×{{ psr.servings_multiplier }}</span>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </div>
+        <div class="mt-4 flex gap-2">
+            <button onclick="analyzeSession()"
+                    class="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium text-sm transition-colors">
+                🔍 Analyze & Generate Plan
+            </button>
+            <button onclick="loadIngredients()"
+                    class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium text-sm transition-colors">
+                🛒 View Combined Shopping List
+            </button>
+        </div>
+    </div>
+
+    <!-- Analysis Results Container -->
+    <div id="analysis-results"></div>
+</div>
+
+<!-- Edit Name Modal -->
+<div id="edit-name-modal" class="fixed inset-0 z-50 hidden items-center justify-center">
+    <div class="absolute inset-0 bg-black/50" onclick="hideEditNameModal()"></div>
+    <div class="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+        <h2 class="text-xl font-semibold mb-4">Edit Session Name</h2>
+        <input type="text" id="edit-name-input" value="{{ session.name or '' }}"
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none mb-4">
+        <div class="flex justify-end gap-3">
+            <button onclick="hideEditNameModal()" class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
+            <button onclick="saveSessionName()" class="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium">Save</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const SESSION_ID = {{ session.id }};
+const CSRF_TOKEN = '{{ csrf_token() }}';
+
+// ── Edit Name ────────────────────────────────────
+function editSessionName() {
+    document.getElementById('edit-name-modal').classList.remove('hidden');
+    document.getElementById('edit-name-modal').classList.add('flex');
+}
+function hideEditNameModal() {
+    document.getElementById('edit-name-modal').classList.add('hidden');
+    document.getElementById('edit-name-modal').classList.remove('flex');
+}
+async function saveSessionName() {
+    const name = document.getElementById('edit-name-input').value.trim();
+    try {
+        const resp = await fetch(`/prep/sessions/${SESSION_ID}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN},
+            body: JSON.stringify({ name: name || null })
+        });
+        if (resp.ok) {
+            document.getElementById('session-title-display').textContent = name || 'Unnamed Session';
+            hideEditNameModal();
+        }
+    } catch(e) { alert('Failed to update name'); }
+}
+
+// ── Delete Session ───────────────────────────────
+async function deleteSession() {
+    if (!confirm('Delete this prep session? This cannot be undone.')) return;
+    try {
+        const resp = await fetch(`/prep/sessions/${SESSION_ID}`, {
+            method: 'DELETE',
+            headers: {'X-CSRFToken': CSRF_TOKEN}
+        });
+        if (resp.ok) window.location.href = '/prep';
+    } catch(e) { alert('Failed to delete session'); }
+}
+
+// ── Analyze Session ──────────────────────────────
+async function analyzeSession() {
+    const results = document.getElementById('analysis-results');
+    results.innerHTML = '<div class="text-center py-8"><div class="animate-spin inline-block w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div><p class="mt-3 text-gray-500">Analyzing recipes...</p></div>';
+
+    try {
+        const resp = await fetch(`/prep/sessions/${SESSION_ID}/analyze`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN},
+            body: JSON.stringify({})
+        });
+        if (!resp.ok) throw new Error('Analysis failed');
+
+        const data = await resp.json();
+        renderAnalysis(data);
+    } catch(e) {
+        results.innerHTML = `<p class="text-red-500 bg-red-50 p-4 rounded-lg">Failed to analyze: ${e.message}</p>`;
+    }
+}
+
+function renderAnalysis(data) {
+    const results = document.getElementById('analysis-results');
+    const timeline = data.timeline || {};
+    const tasks = data.tasks || [];
+
+    let totalTimeHtml = '';
+    if (timeline.total_time) {
+        totalTimeHtml = `
+            <div class="bg-primary-50 border border-primary-200 rounded-lg p-4 mb-6">
+                <p class="text-sm text-primary-800">
+                    ⏱️ Estimated total time: <strong>${timeline.total_time} minutes</strong>
+                    (active + longest parallel task)
+                </p>
+            </div>`;
+    }
+
+    // Category badge colors
+    const catColors = {
+        mise_en_place: 'bg-blue-100 text-blue-800',
+        cooking: 'bg-orange-100 text-orange-800',
+        passive: 'bg-purple-100 text-purple-800',
+        assembly: 'bg-green-100 text-green-800',
+        mise: 'bg-blue-100 text-blue-800',
+        cook: 'bg-orange-100 text-orange-800',
+        assemble: 'bg-green-100 text-green-800',
+        garnish: 'bg-pink-100 text-pink-800',
+    };
+    const catLabels = {
+        mise_en_place: '🔪 Mise en Place',
+        cooking: '🍳 Cooking',
+        passive: '⏳ Passive',
+        assembly: '🍽️ Assembly',
+        mise: '🔪 Mise en Place',
+        cook: '🍳 Cooking',
+        assemble: '🍽️ Assembly',
+        garnish: '🌿 Garnish',
+    };
+
+    let tasksHtml = tasks.map(t => {
+        const cat = t.category || 'mise';
+        const badge = catColors[cat] || 'bg-gray-100 text-gray-700';
+        const label = catLabels[cat] || cat;
+        const timeStr = t.estimated_minutes ? `${t.estimated_minutes} min` : '—';
+        const recipeStr = t.recipe_title ? `<span class="text-xs text-gray-400 ml-2">from ${escapeHtml(t.recipe_title)}</span>` : '';
+        const parallelStr = t.is_parallel ? '<span class="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">⏳ parallel</span>' : '';
+        const checked = t.completed ? 'checked' : '';
+
+        return `
+            <div class="flex items-start gap-3 p-3 bg-white border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors ${t.completed ? 'opacity-60' : ''}">
+                <input type="checkbox" ${checked}
+                       onchange="toggleTask(${t.id}, this.checked)"
+                       class="mt-1 rounded text-primary-600 focus:ring-primary-500">
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm ${t.completed ? 'line-through text-gray-400' : 'text-gray-700'}">
+                        ${escapeHtml(t.description)}${recipeStr}${parallelStr}
+                    </p>
+                    <div class="flex items-center gap-2 mt-1">
+                        <span class="text-xs px-2 py-0.5 rounded-full ${badge}">${label}</span>
+                        <span class="text-xs text-gray-400">${timeStr}</span>
+                    </div>
+                </div>
+            </div>`;
+    }).join('');
+
+    // Parallel windows
+    let pwHtml = '';
+    if (timeline.parallel_windows && timeline.parallel_windows.length > 0) {
+        pwHtml = `
+            <div class="mt-4 bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <h4 class="text-sm font-semibold text-purple-800 mb-2">🔄 Parallel Windows</h4>
+                <ul class="space-y-1">
+                    ${timeline.parallel_windows.map(pw => `
+                        <li class="text-xs text-purple-700">${escapeHtml(pw.hint)}</li>
+                    `).join('')}
+                </ul>
+            </div>`;
+    }
+
+    results.innerHTML = `
+        <div class="space-y-6">
+            ${totalTimeHtml}
+
+            <!-- Prep Timeline -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                <h2 class="text-lg font-semibold mb-1">📋 Prep Timeline</h2>
+                <p class="text-sm text-gray-500 mb-4">Step-by-step plan — check off as you go</p>
+                <div class="space-y-2">
+                    ${tasksHtml || '<p class="text-sm text-gray-400">No tasks generated</p>'}
+                </div>
+                ${pwHtml}
+            </div>
+        </div>`;
+}
+
+// ── Toggle task completion ──────────────────────
+async function toggleTask(taskId, completed) {
+    try {
+        await fetch(`/prep/tasks/${taskId}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN},
+            body: JSON.stringify({ completed })
+        });
+    } catch(e) { /* ignore */ }
+}
+
+// ── Combined Ingredients ─────────────────────────
+async function loadIngredients() {
+    const results = document.getElementById('analysis-results');
+    results.innerHTML = '<div class="text-center py-8"><div class="animate-spin inline-block w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div><p class="mt-3 text-gray-500">Building shopping list...</p></div>';
+
+    try {
+        const resp = await fetch(`/prep/sessions/${SESSION_ID}/ingredients`);
+        if (!resp.ok) throw new Error('Failed to load');
+        const data = await resp.json();
+        renderIngredients(data);
+    } catch(e) {
+        results.innerHTML = `<p class="text-red-500 bg-red-50 p-4 rounded-lg">Failed to load: ${e.message}</p>`;
+    }
+}
+
+function renderIngredients(data) {
+    const results = document.getElementById('analysis-results');
+    const categories = data.categories || [];
+
+    if (categories.length === 0) {
+        results.innerHTML = '<p class="text-gray-500 bg-white rounded-xl border border-gray-200 p-5">No ingredients found across recipes</p>';
+        return;
+    }
+
+    let html = '<div class="space-y-4">';
+
+    for (const cat of categories) {
+        const items = cat.items || [];
+        if (items.length === 0) continue;
+
+        html += `
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                <h3 class="text-md font-semibold text-gray-800 mb-3">📦 ${escapeHtml(cat.category)}</h3>
+                <ul class="space-y-2">`;
+
+        for (const item of items) {
+            const shared = item.recipes.length > 1;
+            const sharedClass = shared ? 'bg-yellow-50 border-yellow-200' : '';
+            const sharedBadge = shared ? `<span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full ml-2">in ${item.recipes.length} recipes</span>` : '';
+            const recipeNames = item.recipes.map(r => r.recipe_title).join(', ');
+
+            html += `
+                <li class="flex items-center justify-between p-2 rounded-lg ${sharedClass}">
+                    <span class="text-sm ${shared ? 'font-medium' : ''}">
+                        ${escapeHtml(item.ingredient)}
+                        ${sharedBadge}
+                    </span>
+                    <span class="text-xs text-gray-400">${escapeHtml(recipeNames)}</span>
+                </li>`;
+        }
+
+        html += '</ul></div>';
+    }
+    html += '</div>';
+
+    results.innerHTML = `
+        <div class="mb-6">
+            <h2 class="text-lg font-semibold">🛒 Combined Shopping List</h2>
+            <p class="text-sm text-gray-500">Deduplicated across all recipes · <span class="text-yellow-700 font-medium">Highlighted</span> items appear in multiple recipes</p>
+        </div>
+        ${html}`;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

@@ -4,9 +4,11 @@ from werkzeug.utils import secure_filename
 from app import db, limiter
 from app.models import (Recipe, Tag, Note, ShoppingItem,
                          Store, StoreAisle, AisleOverride, MealPlan,
+                         PrepSession, PrepSessionRecipe, PrepTask,
                          classify_aisle, seed_default_store)
 from app.auth import editor_or_admin, admin_required, login_required_web, editor_or_admin_web
 from app.image_utils import download_image, delete_image, validate_url, get_upload_dir
+from app.prep_analyzer import PrepAnalyzer
 from config import (
     MAX_NOTE_LENGTH, MAX_TAG_NAME_LENGTH,
     DEFAULT_PER_PAGE, MAX_PER_PAGE
@@ -193,6 +195,266 @@ def shopping_list():
 def meal_plan_page():
     """Render the meal plan calendar page."""
     return render_template('meal_plan.html')
+
+
+# ============================================================================
+# Prep Session Routes
+# ============================================================================
+
+@main_bp.route('/prep')
+def prep_index():
+    """Render the prep session list page."""
+    sessions = PrepSession.query.order_by(PrepSession.updated_at.desc()).all()
+    return render_template('prep_index.html', sessions=sessions)
+
+
+@main_bp.route('/prep/sessions', methods=['POST'])
+@editor_or_admin_web
+def create_prep_session():
+    """Create a new prep session.
+
+    Expects JSON: { name (optional), recipe_ids: [1, 2, 3] }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    recipe_ids = data.get('recipe_ids', [])
+    if not recipe_ids or not isinstance(recipe_ids, list):
+        return jsonify({'error': 'recipe_ids array is required'}), 400
+
+    session_name = data.get('name', '').strip() or None
+
+    # Verify all recipes exist
+    recipes = Recipe.query.filter(Recipe.id.in_(recipe_ids)).all()
+    if len(recipes) != len(recipe_ids):
+        return jsonify({'error': 'One or more recipe IDs are invalid'}), 400
+
+    session = PrepSession(name=session_name)
+    db.session.add(session)
+    db.session.flush()
+
+    for idx, rid in enumerate(recipe_ids):
+        psr = PrepSessionRecipe(
+            session_id=session.id,
+            recipe_id=rid,
+            sort_order=idx,
+        )
+        db.session.add(psr)
+
+    db.session.commit()
+    return jsonify(session.to_dict(include_analysis=True)), 201
+
+
+@main_bp.route('/prep/sessions/<int:session_id>')
+def get_prep_session(session_id):
+    """Get session detail with analysis, rendered as HTML."""
+    session = PrepSession.query.filter_by(id=session_id).first_or_404()
+    return render_template('prep_detail.html', session=session)
+
+
+@main_bp.route('/prep/sessions/<int:session_id>', methods=['PUT'])
+@editor_or_admin_web
+def update_prep_session(session_id):
+    """Update session name or recipe list.
+
+    Expects JSON: { name (optional), recipe_ids: [1, 2, 3] (optional) }
+    """
+    session = PrepSession.query.filter_by(id=session_id).first_or_404()
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    if 'name' in data:
+        session.name = data['name'].strip() or None
+
+    if 'recipe_ids' in data:
+        recipe_ids = data['recipe_ids']
+        if not isinstance(recipe_ids, list):
+            return jsonify({'error': 'recipe_ids must be an array'}), 400
+
+        # Verify recipes exist
+        recipes = Recipe.query.filter(Recipe.id.in_(recipe_ids)).all()
+        if len(recipes) != len(recipe_ids):
+            return jsonify({'error': 'One or more recipe IDs are invalid'}), 400
+
+        # Remove existing and replace
+        PrepSessionRecipe.query.filter_by(session_id=session.id).delete()
+        for idx, rid in enumerate(recipe_ids):
+            psr = PrepSessionRecipe(
+                session_id=session.id,
+                recipe_id=rid,
+                sort_order=idx,
+            )
+            db.session.add(psr)
+
+        # Clear old analysis tasks when recipes change
+        PrepTask.query.filter_by(session_id=session.id).delete()
+
+    db.session.commit()
+    return jsonify(session.to_dict(include_analysis=True))
+
+
+@main_bp.route('/prep/sessions/<int:session_id>', methods=['DELETE'])
+@admin_required
+def delete_prep_session(session_id):
+    """Delete a prep session and all related records."""
+    session = PrepSession.query.filter_by(id=session_id).first_or_404()
+    db.session.delete(session)
+    db.session.commit()
+    return jsonify({'message': 'Deleted'}), 200
+
+
+@main_bp.route('/prep/sessions/<int:session_id>/analyze', methods=['POST'])
+@editor_or_admin_web
+def analyze_prep_session(session_id):
+    """Trigger analysis — generates PrepTasks from combined recipes."""
+    session = PrepSession.query.filter_by(id=session_id).first_or_404()
+
+    # Gather all recipes in this session
+    recipes = [psr.recipe for psr in session.recipes if psr.recipe]
+    if not recipes:
+        return jsonify({'error': 'No recipes in session'}), 400
+
+    # Clear old tasks
+    PrepTask.query.filter_by(session_id=session.id).delete()
+    db.session.flush()
+
+    # Run analysis
+    analyzer = PrepAnalyzer(recipes)
+    timeline = analyzer.generate_timeline()
+
+    # Create PrepTask records from timeline
+    for idx, task_data in enumerate(timeline['tasks']):
+        prep_task = PrepTask(
+            session_id=session.id,
+            description=task_data['description'],
+            category=task_data['category'],
+            recipe_id=task_data.get('recipe_id'),
+            estimated_minutes=task_data.get('estimated_minutes'),
+            sort_order=idx,
+            is_parallel=task_data.get('is_parallel', False),
+        )
+        db.session.add(prep_task)
+        db.session.flush()
+
+        # Store depends_on after all tasks are created
+        task_data['_db_id'] = prep_task.id
+
+    # Now set depends_on links (simplified: link sequential tasks within
+    # each recipe by step_index)
+    recipe_task_order = {}
+    for task_data in timeline['tasks']:
+        rid = task_data.get('recipe_id')
+        si = task_data.get('step_index', 0)
+        if rid not in recipe_task_order:
+            recipe_task_order[rid] = []
+        recipe_task_order[rid].append((si, task_data['_db_id']))
+
+    for rid, ordered in recipe_task_order.items():
+        ordered.sort(key=lambda x: x[0])
+        for i in range(1, len(ordered)):
+            prev_db_id = ordered[i - 1][1]
+            curr_db_id = ordered[i][1]
+            curr_task = PrepTask.query.get(curr_db_id)
+            if curr_task:
+                curr_task.depends_on = prev_db_id
+
+    db.session.commit()
+
+    # Build response
+    result = session.to_dict(include_analysis=True)
+    result['timeline'] = {
+        'total_time': timeline['total_time'],
+        'parallel_windows': timeline['parallel_windows'],
+    }
+    return jsonify(result)
+
+
+@main_bp.route('/prep/tasks/<int:task_id>', methods=['PUT'])
+@editor_or_admin_web
+def update_prep_task(task_id):
+    """Toggle task completion or reorder.
+
+    Expects JSON: { completed (optional), sort_order (optional) }
+    """
+    task = PrepTask.query.filter_by(id=task_id).first_or_404()
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    if 'completed' in data:
+        task.completed = bool(data['completed'])
+    if 'sort_order' in data:
+        task.sort_order = int(data['sort_order'])
+
+    db.session.commit()
+    return jsonify(task.to_dict())
+
+
+@main_bp.route('/prep/sessions/<int:session_id>/ingredients')
+def get_prep_ingredients(session_id):
+    """Get combined, deduplicated ingredient list grouped by category.
+
+    Returns JSON:
+        { "categories": [...], "shared": {...}, "session": {...} }
+    """
+    session = PrepSession.query.filter_by(id=session_id).first_or_404()
+    recipes = [psr.recipe for psr in session.recipes if psr.recipe]
+
+    if not recipes:
+        return jsonify({
+            'categories': [],
+            'shared': {},
+            'session': session.to_dict(),
+        })
+
+    analyzer = PrepAnalyzer(recipes)
+    ingredients = analyzer.get_combined_ingredients()
+    ingredients['session'] = session.to_dict()
+    return jsonify(ingredients)
+
+
+@main_bp.route('/prep/sessions/<int:session_id>/timeline')
+def get_prep_timeline(session_id):
+    """Get prep timeline as JSON.
+
+    Returns:
+        { total_time, tasks: [...], parallel_windows: [...] }
+    """
+    session = PrepSession.query.filter_by(id=session_id).first_or_404()
+    tasks = PrepTask.query.filter_by(session_id=session_id).order_by(
+        PrepTask.sort_order
+    ).all()
+
+    tasks_data = [t.to_dict() for t in tasks]
+
+    # Calculate total time and parallel windows from saved tasks
+    active_total = 0
+    parallel_times = []
+    parallel_windows = []
+    for t in tasks:
+        if t.estimated_minutes:
+            if t.is_parallel:
+                parallel_times.append(t.estimated_minutes)
+                parallel_windows.append({
+                    'task_id': t.id,
+                    'task_description': t.description,
+                    'duration': t.estimated_minutes,
+                    'hint': f'"{t.description[:50]}..." can happen while active tasks proceed',
+                })
+            else:
+                active_total += t.estimated_minutes
+
+    longest_parallel = max(parallel_times) if parallel_times else 0
+    total_time = active_total + longest_parallel
+
+    return jsonify({
+        'total_time': total_time if total_time > 0 else None,
+        'tasks': tasks_data,
+        'parallel_windows': parallel_windows,
+        'session_name': session.name,
+    })
 
 
 # ============================================================================
@@ -1440,6 +1702,7 @@ def update_shopping_item(item_id):
             ).first()
             if new_aisle.name != auto_aisle_name:
                 if existing_override:
+
                     existing_override.aisle_id = new_aisle_id
                 elif normalized:
                     ov = AisleOverride(store_id=store_id, item_name_normalized=normalized, aisle_id=new_aisle_id)
